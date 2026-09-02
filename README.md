@@ -36,6 +36,12 @@ Human mode needs no credentials.
   without touching collision.
 - Landing on a `1` ends the game. Speed ramps from 260ms to 120ms per step.
 
+## Seeds
+
+The generator is seeded, so a run is reproducible. The seed box shows the current
+run's seed and accepts one to replay; `share` copies a `?seed=` link. Same seed,
+same lane - which is what makes a human score and an agent score comparable.
+
 ## Design
 
 The world is a discrete state machine: one logical step = the lane advances exactly

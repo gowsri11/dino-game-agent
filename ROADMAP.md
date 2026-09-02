@@ -9,7 +9,7 @@ Tracking for the "make it a better game" work. Each item is one commit.
 | 3 | Recovery cost scaled to commitment; variable gaps | done |
 | 4 | Difficulty curve that does not plateau | done |
 | 5 | Authored obstacle patterns | done |
-| 6 | Seed sharing, high score, feedback | todo |
+| 6 | Seed sharing, high score, feedback | done |
 | 7 | Headless benchmark harness | todo |
 
 ## Why not "double the grid resolution"

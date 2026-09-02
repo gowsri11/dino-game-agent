@@ -1,4 +1,4 @@
-import { createGame, step, applyAction, observe, POSE } from "./engine.js";
+import { createGame, step, applyAction, observe, POSE, PLAYER_COL, EMPTY } from "./engine.js";
 import { setupCanvas, draw } from "./render.js";
 import { EventBus } from "./agent/events.js";
 import { createTools } from "./agent/tools.js";
@@ -9,7 +9,21 @@ const ctx = setupCanvas(document.getElementById("game"));
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
 
+// A seed can come from the URL, so a run can be shared and replayed exactly.
+const urlSeed = Number(new URLSearchParams(location.search).get("seed"));
+if (Number.isFinite(urlSeed) && urlSeed > 0) $("seed").value = String(urlSeed);
+
+const BEST_KEY = "dino:best";
+const readBest = () => Number(localStorage.getItem(BEST_KEY) ?? 0) || 0;
+function recordBest(score) {
+  if (score <= readBest()) return false;
+  localStorage.setItem(BEST_KEY, String(score));
+  return true;
+}
+
 let game = createGame();
+let deathAt = 0;      // for the death shake
+let clearedAt = 0;    // for the obstacle-cleared pulse
 let mode = "human";      // "human" | "agent"
 let running = false, paused = false, aborted = false;
 let arming = false;   // agent mode: hold the world still until the first plan lands
@@ -59,10 +73,16 @@ function stats() {
               : (aborted ? "aborted" : "running");
   $("stats").textContent =
     `mode ${mode} | ${state} | score ${game.score} | step ${game.step} | ${game.stepMs}ms/step`;
+  const best = readBest();
+  $("best").textContent = best ? `best ${best}` : "";
 }
 
 function newGame(nextMode) {
-  game = createGame();
+  const wanted = Number($("seed").value.trim());
+  game = createGame(Number.isFinite(wanted) && wanted > 0 ? wanted : undefined);
+  $("seed").value = String(game.seed);
+  deathAt = 0;
+  clearedAt = 0;
   mode = nextMode;
   running = true; paused = false; aborted = false; arming = false;
   bufferedAction = null;
@@ -79,6 +99,8 @@ function newGame(nextMode) {
 
 function gameOver() {
   running = false;
+  deathAt = performance.now();
+  if (recordBest(game.score)) log(`new best: ${game.score}`);
   inFlight?.abort();
   inFlight = null;
   log(`--- game over at step ${game.step}, score ${game.score} ---`);
@@ -145,6 +167,8 @@ function tick(now) {
     }
     prevPose = game.poseNow;
     step(game, null);
+    // Passing through an obstacle and living: worth a nod.
+    if (game.alive && game.lane[PLAYER_COL] !== EMPTY) clearedAt = performance.now();
 
     // A press made during the post-landing cooldown is replayed here, once the
     // step has cleared that cooldown, rather than being silently dropped.
@@ -157,7 +181,10 @@ function tick(now) {
   const alpha = running && !paused && !arming
     ? Math.min(1, (now - lastStepAt) / game.stepMs)
     : 1;
-  draw(ctx, game, alpha, prevPose);
+  draw(ctx, game, alpha, prevPose, {
+    shake: Math.max(0, 1 - (now - deathAt) / 380),
+    pulse: Math.max(0, 1 - (now - clearedAt) / 260),
+  });
 }
 requestAnimationFrame(tick);
 
@@ -185,6 +212,16 @@ addEventListener("keydown", (e) => {
   if (e.repeat) return;              // ignore key auto-repeat from a held key
   humanPress(type);
 });
+
+$("share").onclick = async () => {
+  const url = `${location.origin}${location.pathname}?seed=${game.seed}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    log(`copied: ${url}`);
+  } catch {
+    log(`share this run: ${url}`);   // clipboard needs a user gesture and https
+  }
+};
 
 $("start").onclick = () => { agent?.stop("human took over"); agent = null; newGame("human"); };
 $("agent").onclick = () => {

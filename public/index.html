@@ -12,6 +12,9 @@
   button { font: inherit; padding: 6px 12px; cursor: pointer; }
   button:disabled { opacity: .4; cursor: default; }
   #stats { margin-left: 12px; }
+  #best { color: #1b7f3b; font-weight: bold; }
+  input { font: inherit; padding: 5px; width: 11ch; }
+  label { color: #666; font-size: 12px; }
   #log { margin-top: 12px; height: 230px; overflow-y: auto; background: #f4f4f4;
          border: 1px solid #ddd; padding: 8px; font-size: 12px; white-space: pre-wrap; }
   .hint { color: #666; font-size: 12px; }
@@ -33,7 +36,10 @@
     <button id="planner">Start (planner)</button>
     <button id="pause" disabled>Pause</button>
     <button id="abort" disabled>Abort agent</button>
+    <label>seed <input id="seed" size="11" placeholder="random" /></label>
+    <button id="share" title="copy a link that replays this exact run">share</button>
     <span id="stats">score 0</span>
+    <span id="best"></span>
   </div>
   <p class="hint">
     <b>Space</b> = jump over <span class="low">low</span> obstacles &middot;

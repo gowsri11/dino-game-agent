@@ -293,7 +293,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const rel = req.url === "/" ? "index.html" : decodeURIComponent(req.url).slice(1);
+  // Strip the query string: shared run links carry ?seed=, and matching on the
+  // raw url would 404 them.
+  const { pathname } = new URL(req.url, "http://localhost");
+  const rel = pathname === "/" ? "index.html" : decodeURIComponent(pathname).slice(1);
   const file = path.join(PUBLIC, rel);
   if (!file.startsWith(PUBLIC)) { res.writeHead(403).end(); return; }
   try {

@@ -51,11 +51,23 @@ function drawRun(ctx, kind, i, w, alpha) {
 }
 
 // alpha = fraction of the way from the last logical step to the next one.
-export function draw(ctx, g, alpha, prevPose = POSE.STAND) {
+// fx carries decaying 0..1 feedback values, so the renderer owns the look and
+// main.js only says what happened and when.
+export function draw(ctx, g, alpha, prevPose = POSE.STAND, fx = {}) {
   const w = LANE_WIDTH * CELL;
+  const shake = fx.shake ?? 0;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, w, ROWS_H);
-  ctx.fillStyle = "#f7f7f7";
+  ctx.fillStyle = shake > 0 ? `rgba(255,${Math.round(247 - 90 * shake)},${Math.round(247 - 90 * shake)},1)`
+                            : "#f7f7f7";
   ctx.fillRect(0, 0, w, ROWS_H);
+  if (shake > 0) {
+    // Decaying jolt on death. Sign alternates per frame so it reads as a shake
+    // rather than a drift.
+    const mag = shake * shake * 7;
+    ctx.translate((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag);
+  }
 
   ctx.strokeStyle = "#bbb";
   ctx.beginPath();
@@ -72,13 +84,14 @@ export function draw(ctx, g, alpha, prevPose = POSE.STAND) {
     i += run - 1;
   }
 
-  drawPlayer(ctx, g, alpha, prevPose);
+  drawPlayer(ctx, g, alpha, prevPose, fx.pulse ?? 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 const topFor = (pose) =>
   pose === POSE.AIR ? AIR_TOP : pose === POSE.DUCK ? DUCK_TOP : GROUND_Y;
 
-function drawPlayer(ctx, g, alpha, prevPose) {
+function drawPlayer(ctx, g, alpha, prevPose, pulse) {
   // Rise fast, drop late. Collision is unchanged - this only stretches the
   // apparent hang time and keeps the sprite clear of the obstacle it just passed.
   const pose = g.poseNow;
@@ -89,14 +102,22 @@ function drawPlayer(ctx, g, alpha, prevPose) {
   const ease = t * t * (3 - 2 * t);
   const y = from + (to - from) * ease;
 
+  const cx = PLAYER_COL * CELL + CELL / 2;
+  if (pulse > 0) {
+    // Expanding ring as an obstacle passes under an intact player.
+    ctx.strokeStyle = `rgba(63,163,77,${pulse * 0.8})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, y + CELL / 2, CELL * (0.5 + (1 - pulse) * 0.7), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
   const ducking = pose === POSE.DUCK;
   const size = ducking ? CELL * 0.55 : CELL - 4;
   ctx.font = `${size}px serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.globalAlpha = g.alive ? 1 : 0.45;
-  ctx.fillText("\u{1F996}",
-    PLAYER_COL * CELL + CELL / 2,
-    y + (ducking ? (FLOOR_Y - DUCK_TOP) / 2 : CELL / 2));
+  ctx.fillText("\u{1F996}", cx, y + (ducking ? (FLOOR_Y - DUCK_TOP) / 2 : CELL / 2));
   ctx.globalAlpha = 1;
 }
