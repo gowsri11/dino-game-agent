@@ -7,7 +7,7 @@ Tracking for the "make it a better game" work. Each item is one commit.
 | 1 | Roadmap + tracking | done |
 | 2 | Duck verb and high obstacles | done |
 | 3 | Recovery cost scaled to commitment; variable gaps | done |
-| 4 | Difficulty curve that does not plateau | todo |
+| 4 | Difficulty curve that does not plateau | done |
 | 5 | Authored obstacle patterns | todo |
 | 6 | Seed sharing, high score, feedback | todo |
 | 7 | Headless benchmark harness | todo |
@@ -44,3 +44,16 @@ cell of slack and makes an oversized one miss by two.
 
 Gaps are `2 x width + 3` plus random slack, so the punishment bites at the
 tightest spacing and wide sections stay forgiving.
+
+
+## The difficulty curve (4)
+
+Speed ramps 260ms -> 120ms over the first 350 steps and then floors. On its own
+that means the game stops getting harder after about a minute, so a long run is
+endurance rather than escalation.
+
+Once speed floors, density takes over: obstacles get likelier and the random
+slack in the gaps is squeezed out, over the following 900 steps. The gap floor
+itself is never crossed, so lanes stay provably clearable no matter how long a
+run goes on - which does mean difficulty is bounded. It has to be: an unbounded
+curve eventually produces a lane no player can clear.

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   createGame, step, applyAction, observe, poseOf,
   PLAYER_COL, MAX_JUMP, MIN_GAP, gapFor, LANE_LEN, EMPTY, LOW, HIGH, POSE,
+  difficulty, SPEED_STEPS,
 } from "../public/engine.js";
 
 function runLength(lane, from) {
@@ -16,7 +17,9 @@ test("generator: obstacles are at most 3 wide and leave width+GAP_BASE of gap", 
   for (let seed = 0; seed < 50; seed++) {
     const g = createGame(seed);
     const cells = [...g.lane];
-    for (let i = 0; i < 3000; i++) cells.push(g.nextCell());
+    // Sweep the whole difficulty range: the gap floor is squeezed hardest at
+    // maximum density, which is exactly where solvability could break.
+    for (let i = 0; i < 3000; i++) cells.push(g.nextCell(i));
 
     let i = 0;
     while (i < cells.length) {
@@ -245,4 +248,43 @@ test("an oversized duck is punished the same way as an oversized jump", () => {
   applyAction(g, { type: "duck", width: 3 });
   while (g.duckCells > 0) step(g, null);
   assert.equal(g.groundCooldown, 6, "duck recovery is charged like jump recovery");
+});
+
+
+// --- the difficulty curve ---------------------------------------------------
+
+test("difficulty keeps climbing after the speed ramp has floored", () => {
+  assert.equal(difficulty(0), 0, "no density pressure while speed is still ramping");
+  assert.equal(difficulty(SPEED_STEPS), 0, "density starts exactly where speed stops");
+  assert.ok(difficulty(SPEED_STEPS + 450) > 0.4, "and rises from there");
+  assert.equal(difficulty(1e6), 1, "but is bounded, or lanes stop being clearable");
+});
+
+test("obstacles get denser with difficulty but never breach the gap floor", () => {
+  const density = (step) => {
+    let obstacles = 0, cells = 0;
+    for (let seed = 0; seed < 12; seed++) {
+      const g = createGame(seed);
+      const lane = [];
+      for (let i = 0; i < 1500; i++) lane.push(g.nextCell(step));
+      for (let i = 0; i < lane.length; i++) {
+        if (lane[i] === EMPTY) continue;
+        const w = runLength(lane, i);
+        obstacles++;
+        const gap = lane.slice(i + w, i + w + gapFor(w));
+        if (i + w + gapFor(w) <= lane.length) {
+          assert.ok(gap.every((c) => c === EMPTY),
+            `step ${step}: width-${w} obstacle at ${i} left only ${gap.join("")}`);
+        }
+        i += w - 1;
+      }
+      cells += lane.length;
+    }
+    return obstacles / cells;
+  };
+
+  const easy = density(0);
+  const hard = density(SPEED_STEPS + 900);
+  assert.ok(hard > easy * 1.2,
+    `late game should be denser: ${easy.toFixed(4)} -> ${hard.toFixed(4)}`);
 });

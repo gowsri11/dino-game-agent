@@ -21,8 +21,19 @@ export const START_STEP_MS = 260;
 export const MIN_STEP_MS = 120;
 export const RAMP_EVERY = 25;
 export const RAMP_MS = 10;
-const OBSTACLE_CHANCE = 0.4;
+const OBSTACLE_CHANCE = 0.35;
+const MAX_OBSTACLE_CHANCE = 0.7;
 const HIGH_CHANCE = 0.35;            // share of obstacles that must be ducked
+
+// Speed alone plateaus: it reaches MIN_STEP_MS after SPEED_STEPS and then the
+// game never gets harder again. Once it floors, difficulty keeps climbing as
+// density instead - obstacles get likelier and the random slack in the gaps is
+// squeezed out, down to the tightest spacing that is still provably clearable.
+export const SPEED_STEPS =
+  ((START_STEP_MS - MIN_STEP_MS) / RAMP_MS) * RAMP_EVERY;
+const DENSITY_SPAN = 900;
+export const difficulty = (step) =>
+  Math.min(1, Math.max(0, (step - SPEED_STEPS) / DENSITY_SPAN));
 
 // Cell kinds. A low obstacle must be jumped, a high one must be ducked under.
 // Standing upright is fatal to both, so every obstacle asks which verb, not just
@@ -52,16 +63,19 @@ function createGenerator(rand, leadIn) {
   let pending = 0;
   let pendingKind = LOW;
   let cooldown = leadIn;
-  return function nextCell() {
+  return function nextCell(step = 0) {
     if (pending > 0) { pending--; return pendingKind; }
     if (cooldown > 0) { cooldown--; return EMPTY; }
-    if (rand() < OBSTACLE_CHANCE) {
+    const d = difficulty(step);
+    if (rand() < OBSTACLE_CHANCE + (MAX_OBSTACLE_CHANCE - OBSTACLE_CHANCE) * d) {
       const width = 1 + Math.floor(rand() * MAX_JUMP);
       pendingKind = rand() < HIGH_CHANCE ? HIGH : LOW;
       pending = width - 1;
-      // width + GAP_BASE is the tightest gap a correctly-sized action can clear;
-      // the random slack varies the rhythm without ever going below it.
-      cooldown = gapFor(width) + Math.floor(rand() * (EXTRA_GAP + 1));
+      // gapFor(width) is the tightest gap a correctly-sized action can clear; the
+      // slack on top varies the rhythm and is squeezed out as difficulty rises,
+      // but the floor is never crossed, so every lane stays clearable.
+      const slack = Math.round(EXTRA_GAP * (1 - d));
+      cooldown = gapFor(width) + Math.floor(rand() * (slack + 1));
       return pendingKind;
     }
     return EMPTY;
@@ -71,7 +85,7 @@ function createGenerator(rand, leadIn) {
 export function createGame(seed = Date.now()) {
   const nextCell = createGenerator(mulberry32(seed), PLAYER_COL + MIN_GAP);
   const lane = [];
-  for (let i = 0; i < LANE_LEN; i++) lane.push(nextCell());
+  for (let i = 0; i < LANE_LEN; i++) lane.push(nextCell(0));
   return {
     seed, lane, nextCell,
     airCells: 0,      // cells still to be spent airborne, including this step
@@ -146,7 +160,7 @@ export function step(g, action) {
   if (g.airCells === 0 && g.duckCells === 0 && g.groundCooldown > 0) g.groundCooldown--;
 
   g.lane.shift();
-  g.lane.push(g.nextCell());
+  g.lane.push(g.nextCell(g.step));
   g.step++;
 
   const pose = poseOf(g);
