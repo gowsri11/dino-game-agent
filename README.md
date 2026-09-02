@@ -123,6 +123,20 @@ Structured outputs (`output_config.format` + Zod) guarantee the JSON parses.
 The browser is authoritative for game state; the server only plans. The API key never
 reaches the client.
 
+## Benchmarking
+
+```bash
+npm run bench -- --policy heuristic --seeds 25
+npm run bench -- --policy llm-batch --seeds 5 --max-steps 400 --base http://localhost:3000
+```
+
+Headless - `engine.js` is pure, so no browser is involved. Runs in virtual time: a
+policy call is awaited, its real latency measured, and the world advanced by the
+number of steps that latency would have cost. A slow model loses exactly the steps
+it would lose in the browser, but the benchmark finishes as fast as the calls
+allow. Reports score distribution, actions executed vs missed, latency and
+fallbacks. See ROADMAP.md for findings.
+
 ## Testing
 
 `npm test` covers the generator invariants (width <= 3, gap >= 4), that `jump(w)`

@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
-    "test": "node --test 'test/*.test.js'"
+    "test": "node --test 'test/*.test.js'",
+    "bench": "node bench.mjs"
   },
   "dependencies": {}
 }

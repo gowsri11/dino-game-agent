@@ -10,7 +10,7 @@ Tracking for the "make it a better game" work. Each item is one commit.
 | 4 | Difficulty curve that does not plateau | done |
 | 5 | Authored obstacle patterns | done |
 | 6 | Seed sharing, high score, feedback | done |
-| 7 | Headless benchmark harness | todo |
+| 7 | Headless benchmark harness | done |
 
 ## Why not "double the grid resolution"
 
@@ -73,3 +73,34 @@ to density, the opening minutes would have been nothing but single obstacles.
 Patterns list obstacles only. The generator inserts the required gap after each
 one, so a pattern cannot express an unclearable spacing even by mistake - the
 invariant is structural rather than something each pattern has to get right.
+
+
+## Benchmark findings (7)
+
+`npm run bench -- --policy <name> --seeds N` runs headlessly: `engine.js` is pure,
+so no browser is involved. It runs in virtual time - a policy call is awaited, the
+real latency measured, and the world advanced by the steps that latency would have
+cost - so a slow model loses exactly the steps it would lose in the browser while
+the benchmark finishes as fast as the calls allow.
+
+First results, and they revise an earlier conclusion:
+
+| policy | seeds | cap | result |
+|---|---|---|---|
+| heuristic | 25 | 1500 | 25/25 reached the cap, 0 missed |
+| llm-batch | 3 | 300 | 3/3 reached the cap, 75 missed |
+| llm | 3 | 300 | 3/3 reached the cap, 0 missed |
+| llm | 1 | 900 | reached the cap, 8 fallbacks from transient errors |
+
+Earlier, per-obstacle died around score 37 while batch survived past 183, and the
+redundancy of re-planning was credited for the gap. That gap has closed: both
+policies now clear every run attempted. The likely cause is the phantom-obstacle
+fix - the observer was inventing a spurious narrow obstacle behind any obstacle
+half past the player, and acting on it corrupted the real action. Per-obstacle had
+no redundancy to absorb that; batch did. With the bug gone, the redundancy is no
+longer load-bearing.
+
+Caveat worth keeping in mind: every policy above *reached the cap*, so the cap is
+the limiting factor, not the policy. These runs do not rank them. Separating them
+needs longer runs or a harder starting difficulty, which is what the harness is
+for.
