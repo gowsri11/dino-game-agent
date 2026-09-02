@@ -48,8 +48,27 @@ const tools = createTools({
   setFrozen: (v) => { arming = v; if (!v) lastStepAt = performance.now(); setButtons(); stats(); },
 });
 let agent = null;
+let sawFallback = false;
+
+const selectedMode = () =>
+  document.querySelector('input[name="mode"]:checked').value;
+
+// The policy dropdown only means anything for the agent loop.
+function syncControls() {
+  $("policy").disabled = selectedMode() !== "agent";
+}
+for (const r of document.querySelectorAll('input[name="mode"]')) {
+  r.addEventListener("change", syncControls);
+}
 
 events.on((e) => {
+  // A failing model is otherwise invisible: the heuristic fallback plays well
+  // enough that a missing key looks like a working agent.
+  if (e.type === "policy_fallback" && !sawFallback) {
+    sawFallback = true;
+    $("warn").hidden = false;
+    $("warn").textContent = `LLM unavailable - playing on the heuristic fallback`;
+  }
   if (e.type === "observation_taken") return;   // too chatty for the panel
   const bits = { ...e };
   delete bits.type; delete bits.at;
@@ -75,6 +94,7 @@ function stats() {
     `mode ${mode} | ${state} | score ${game.score} | step ${game.step} | ${game.stepMs}ms/step`;
   const best = readBest();
   $("best").textContent = best ? `best ${best}` : "";
+  $("best").hidden = !best;
 }
 
 function newGame(nextMode) {
@@ -87,6 +107,8 @@ function newGame(nextMode) {
   running = true; paused = false; aborted = false; arming = false;
   bufferedAction = null;
   prevPose = POSE.STAND;
+  sawFallback = false;
+  $("warn").hidden = true;
   scheduled.clear();
   lastPlanStep = -999;
   inFlight?.abort();
@@ -208,34 +230,26 @@ function humanPress(type = "jump") {
 const KEYS = { Space: "jump", ArrowDown: "duck", KeyS: "duck" };
 
 addEventListener("keydown", (e) => {
+  if (e.target instanceof HTMLInputElement) return;   // typing a seed
+  if (e.code === "KeyP") {
+    e.preventDefault();
+    if (running) togglePause();
+    return;
+  }
+
   const type = KEYS[e.code];
   if (!type) return;
   e.preventDefault();
   if (e.repeat) return;              // ignore key auto-repeat from a held key
 
   // Space doubles as start/restart, so a run begins without reaching for the
-  // mouse. Only when idle - mid-run it is still the jump key.
-  if (!running && e.code === "Space") {
-    agent?.stop("human took over");
-    agent = null;
-    newGame("human");
-    return;
-  }
+  // mouse. Only when idle - mid-run it is still the jump key, and in agent or
+  // planner mode humanPress ignores it anyway.
+  if (!running) { startSelected(); return; }
   humanPress(type);
 });
 
-$("share").onclick = async () => {
-  const url = `${location.origin}${location.pathname}?seed=${game.seed}`;
-  try {
-    await navigator.clipboard.writeText(url);
-    log(`copied: ${url}`);
-  } catch {
-    log(`share this run: ${url}`);   // clipboard needs a user gesture and https
-  }
-};
-
-$("start").onclick = () => { agent?.stop("human took over"); agent = null; newGame("human"); };
-$("agent").onclick = () => {
+function startAgent() {
   agent?.stop("restarted");
   const policies = {
     "llm-batch": createPlannerPolicy,   // one call covers every visible obstacle
@@ -249,10 +263,10 @@ $("agent").onclick = () => {
     events,
   });
   agent.run();          // Agent.startGame() resets the world itself
-};
+}
 
 // The original one-shot planner, kept so the two approaches can be compared.
-$("planner").onclick = async () => {
+async function startPlanner() {
   agent?.stop("switched to planner");
   agent = null;
   newGame("agent");
@@ -262,14 +276,37 @@ $("planner").onclick = async () => {
   await requestPlan();
   arming = false;
   lastStepAt = performance.now();
+}
+
+function startSelected() {
+  const mode = selectedMode();
+  if (mode === "agent") return startAgent();
+  if (mode === "planner") return startPlanner();
+  agent?.stop("human took over");
+  agent = null;
+  newGame("human");
+}
+
+$("start").onclick = startSelected;
+
+$("share").onclick = async () => {
+  const url = `${location.origin}${location.pathname}?seed=${game.seed}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    log(`copied: ${url}`);
+  } catch {
+    log(`share this run: ${url}`);   // clipboard needs a user gesture and https
+  }
 };
-$("pause").onclick = () => {
+
+function togglePause() {
   paused = !paused;
   agent?.setPaused(paused);
   lastStepAt = performance.now();
   if (!paused) maybePlan();
   setButtons(); stats();
-};
+}
+$("pause").onclick = togglePause;
 $("abort").onclick = () => {
   aborted = true;
   agent?.stop("user aborted");
@@ -281,6 +318,7 @@ $("abort").onclick = () => {
   setButtons(); stats();
 };
 
+syncControls();
 setButtons(); stats();
 
 // Debug handle: inspect live state or inject a press from the console.

@@ -64,6 +64,21 @@
     border-radius: 5px; padding: 1px 7px; color: var(--ink); font-size: 11px;
   }
   .low  { color: var(--low);  font-weight: bold; }
+  .group { display: flex; gap: 2px; background: #202a44; border: 1px solid var(--line);
+           border-radius: 7px; padding: 3px; }
+  .group label { padding: 4px 10px; border-radius: 5px; cursor: pointer; color: var(--ink);
+                 font-size: 13px; }
+  .group label:has(input:checked) { background: var(--accent); color: #05203f; font-weight: bold; }
+  .group input { display: none; }
+  select:disabled { opacity: .35; }
+  .warn { border-color: #7a5a1f; color: #e8b44a; }
+
+  #notes { margin-top: 12px; font-size: 12px; color: var(--dim); }
+  #notes summary { cursor: pointer; color: var(--accent); padding: 4px 0; }
+  #notes dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px;
+              margin: 8px 0 0; }
+  #notes dt { color: var(--ink); font-weight: bold; white-space: nowrap; }
+  #notes dd { margin: 0; line-height: 1.6; }
   .high { color: var(--high); font-weight: bold; }
 
   #log {
@@ -79,14 +94,17 @@
     <canvas id="game"></canvas>
 
     <div id="bar">
-      <button id="start" class="primary">Start (human)</button>
-      <button id="agent">Start (agent)</button>
+      <span class="group" id="modes">
+        <label><input type="radio" name="mode" value="human" checked /> human</label>
+        <label><input type="radio" name="mode" value="agent" /> agent</label>
+        <label><input type="radio" name="mode" value="planner" /> planner</label>
+      </span>
       <select id="policy" title="decision policy used inside the agent loop">
         <option value="llm-batch">policy: LLM (batch plan)</option>
         <option value="llm">policy: LLM (per obstacle)</option>
         <option value="heuristic">policy: heuristic</option>
       </select>
-      <button id="planner">Start (planner)</button>
+      <button id="start" class="primary">Start</button>
       <button id="pause" disabled>Pause</button>
       <button id="abort" class="danger" disabled>Abort agent</button>
       <label>seed <input id="seed" placeholder="random" /></label>
@@ -96,15 +114,60 @@
     <div id="hud">
       <span class="chip" id="stats">score 0</span>
       <span class="chip" id="best"></span>
+      <span class="chip warn" id="warn" hidden></span>
     </div>
 
     <p class="hint">
       <kbd>Space</kbd> start &middot; <kbd>Space</kbd> jump over
       <span class="low">low</span> obstacles &middot;
-      <kbd>&darr;</kbd> duck under <span class="high">high</span> ones.<br />
+      <kbd>&darr;</kbd> duck under <span class="high">high</span> ones &middot;
+      <kbd>P</kbd> pause.<br />
       Tap again to extend for wider obstacles. Standing still loses to both, and
       over-committing costs recovery time.
     </p>
+
+    <details id="notes">
+      <summary>what the options do</summary>
+      <dl>
+        <dt>human</dt>
+        <dd>You play. No network, no credentials needed.</dd>
+
+        <dt>agent</dt>
+        <dd>A control loop owns the game: it observes state, asks a policy what to
+            do, and acts through explicit tools, emitting events as it goes. The
+            policy is swappable, which is what the dropdown selects.</dd>
+
+        <dt>planner</dt>
+        <dd>The original pre-agentic version, kept as a control to compare against.
+            It posts the raw lane to the model every few steps and applies whatever
+            comes back. No loop, no tools, no events, and no fallback - so unlike
+            the agent, it really does stop working without credentials.</dd>
+
+        <dt>policy: LLM (batch plan)</dt>
+        <dd>One model call every 5 steps covering every visible obstacle. Each
+            obstacle ends up covered by several successive plans, so one slow reply
+            is harmless.</dd>
+
+        <dt>policy: LLM (per obstacle)</dt>
+        <dd>One model call per obstacle. Fewer wasted tokens, but no redundancy: a
+            single late reply loses that obstacle.</dd>
+
+        <dt>policy: heuristic</dt>
+        <dd>Pure local code, no model. Also the automatic fallback whenever an LLM
+            policy fails, errors, or takes too long.</dd>
+
+        <dt>seed / share</dt>
+        <dd>The seed fixes the lane. The same seed always generates the same
+            obstacles, so a human run and an agent run can be compared on identical
+            terrain. <b>share</b> copies a link that replays this exact run.</dd>
+
+        <dt>pause / abort</dt>
+        <dd><b>Pause</b> freezes the world; scheduled actions survive it because the
+            clock is counted in steps, not wall time. <b>Abort</b> cancels the
+            in-flight model call and stops the agent deciding - the game keeps
+            running until the player hits something.</dd>
+      </dl>
+    </details>
 
     <div id="log"></div>
   </div>

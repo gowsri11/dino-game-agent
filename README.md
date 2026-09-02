@@ -19,7 +19,7 @@ Human mode needs no credentials.
 - Obstacles are height 1, width 1/2/3, always separated by >= 4 empty cells. Each run
   of cells is drawn as one polygon with sloped outer edges — a width-1 obstacle is a
   peak, wider ones are plateaus. Collision stays whole-cell; the slope is cosmetic.
-- **Space** starts a run when idle, and jumps once it is running.
+- **Space** starts a run when idle, and jumps once it is running. **P** pauses.
 - **Space** = jump, applied on the keypress itself (not the next step boundary).
   Tap again mid-air to extend.
 - Airtime is **width + 1** cells. The spare cell absorbs the fact that a press lands
@@ -83,6 +83,14 @@ decision policy inside that loop.
 - `policies.js` holds the swappable decision policies
 - `agent.js` owns the loop; `events.js` is a minimal event bus
 
+Mode is chosen with the radio group and is independent of starting a run, so you
+can switch without committing to a game.
+
+**agent** is the control loop above. **planner** is the original pre-agentic
+version, kept as a control: it posts the raw lane every few steps and applies the
+reply, with no loop, tools, events or fallback - so unlike the agent it genuinely
+stops working without credentials.
+
 Three policies, selectable in the UI:
 
 | policy | calls | endpoint | notes |
@@ -94,6 +102,11 @@ Three policies, selectable in the UI:
 Measured over ~45s runs: batch survived past score 183 while *missing 11 actions*;
 per-obstacle died at 37 having missed only 4. Redundancy, not accuracy, is what
 makes an LLM usable in the loop - decisions were valid in every run (`policy_fallback: 0`).
+
+Note that a misconfigured LLM is easy to miss: the heuristic fallback plays well
+enough that a missing key looks like a working agent. The UI shows a warning chip
+the first time a policy falls back, because otherwise the only evidence is a
+`policy_fallback` line in the event log.
 
 A decision that arrives after its target step is deliberately **dropped**, not
 executed late: jumping at an arbitrary moment is worse than missing quietly, and it

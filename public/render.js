@@ -16,7 +16,7 @@ const SLOPE = CELL * 0.3;
 // Two palettes, blended by the difficulty curve, so the world darkens as the
 // game gets harder rather than on a timer of its own.
 const DAY = {
-  skyTop: "#79c2ff", skyBottom: "#d9f0ff", hillFar: "#93c9a6", hillNear: "#6fb083",
+  skyTop: "#79c2ff", skyBottom: "#d9f0ff", hillFar: "#a9cfd8", hillNear: "#7fb3c4",
   earth: "#d9c9a3", earthLine: "#b9a880", cloud: "#ffffff",
   low: "#2f7d4f", lowDark: "#1e5b38", high: "#e0651c", highDark: "#a8430c",
   text: "#20303c", shadow: "rgba(0,0,0,0.18)",
@@ -178,11 +178,25 @@ function drawPlayer(ctx, p, g, alpha, prevPose, pulse) {
   }
 
   const ducking = pose === POSE.DUCK;
+  const cy = y + (ducking ? (FLOOR_Y - DUCK_TOP) / 2 : CELL / 2);
+
+  // The sprite is light green and so is the daytime sky and hills, which left it
+  // hard to pick out. A dark halo separates it from whatever is behind, and works
+  // against the night palette too.
   ctx.font = `${ducking ? CELL * 0.55 : CELL - 4}px serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.globalAlpha = g.alive ? 1 : 0.5;
-  ctx.fillText("\u{1F996}", cx, y + (ducking ? (FLOOR_Y - DUCK_TOP) / 2 : CELL / 2));
+  // Emoji ignore fillStyle, so a shadow is the only way to outline one. Three
+  // passes build up an opaque halo; a single pass is too faint to separate the
+  // sprite from a light sky.
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.95)";
+  for (const blur of [9, 6, 3]) {
+    ctx.shadowBlur = blur;
+    ctx.fillText("\u{1F996}", cx, cy);
+  }
+  ctx.restore();
   ctx.globalAlpha = 1;
 }
 
