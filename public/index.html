@@ -4,49 +4,110 @@
 <meta charset="utf-8" />
 <title>Obstacle Runner</title>
 <style>
-  body { font-family: ui-monospace, Menlo, Consolas, monospace; margin: 24px;
-         background: #fff; color: #222; }
-  h1 { font-size: 18px; margin: 0 0 12px; }
-  canvas { border: 1px solid #ccc; display: block; image-rendering: pixelated; }
-  #bar { margin: 12px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  button { font: inherit; padding: 6px 12px; cursor: pointer; }
-  button:disabled { opacity: .4; cursor: default; }
-  #stats { margin-left: 12px; }
-  #best { color: #1b7f3b; font-weight: bold; }
-  input { font: inherit; padding: 5px; width: 11ch; }
-  label { color: #666; font-size: 12px; }
-  #log { margin-top: 12px; height: 230px; overflow-y: auto; background: #f4f4f4;
-         border: 1px solid #ddd; padding: 8px; font-size: 12px; white-space: pre-wrap; }
-  .hint { color: #666; font-size: 12px; }
-  .low  { color: #2f4858; font-weight: bold; }
-  .high { color: #b4531f; font-weight: bold; }
+  :root {
+    --bg: #0f1526; --panel: #182036; --line: #2a3550;
+    --ink: #e8eefc; --dim: #8fa0c4;
+    --low: #37b978; --high: #ff8a3d; --accent: #5aa9ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    margin: 0; padding: 24px; background: var(--bg); color: var(--ink);
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+  }
+  .wrap { width: 800px; max-width: 100%; }
+  h1 {
+    font-size: 20px; margin: 0 0 12px; letter-spacing: .5px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  h1 small { font-size: 12px; color: var(--dim); font-weight: normal; }
+  canvas {
+    display: block; border-radius: 12px; width: 100%;
+    box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 0 0 1px var(--line);
+  }
+
+  #bar {
+    margin: 14px 0 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 12px;
+  }
+  button {
+    font: inherit; font-size: 13px; padding: 7px 13px; cursor: pointer;
+    border-radius: 7px; border: 1px solid var(--line);
+    background: #202a44; color: var(--ink); transition: .12s;
+  }
+  button:hover:not(:disabled) { background: #2a3552; border-color: var(--accent); }
+  button:disabled { opacity: .35; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #05203f; font-weight: bold; }
+  button.danger  { background: #8a2f2f; border-color: #a13a3a; }
+  select, input {
+    font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 7px;
+    background: #202a44; color: var(--ink); border: 1px solid var(--line);
+  }
+  input { width: 11ch; }
+  label { color: var(--dim); font-size: 12px; display: flex; align-items: center; gap: 5px; }
+
+  #hud {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;
+    font-size: 12px; align-items: center;
+  }
+  .chip {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 20px; padding: 5px 12px; color: var(--dim);
+  }
+  .chip b { color: var(--ink); font-weight: bold; }
+  #best { border-color: #2f6b4a; color: var(--low); }
+
+  .hint { color: var(--dim); font-size: 12px; margin: 10px 0 0; line-height: 1.7; }
+  kbd {
+    background: #202a44; border: 1px solid var(--line); border-bottom-width: 2px;
+    border-radius: 5px; padding: 1px 7px; color: var(--ink); font-size: 11px;
+  }
+  .low  { color: var(--low);  font-weight: bold; }
+  .high { color: var(--high); font-weight: bold; }
+
+  #log {
+    margin-top: 12px; height: 200px; overflow-y: auto; font-size: 11px;
+    background: #0b1020; border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px; white-space: pre-wrap; color: #93a7cc; line-height: 1.5;
+  }
 </style>
 </head>
 <body>
-  <h1>Obstacle Runner</h1>
-  <canvas id="game"></canvas>
-  <div id="bar">
-    <button id="start">Start (human)</button>
-    <button id="agent">Start (agent)</button>
-    <select id="policy" title="decision policy used inside the agent loop">
-      <option value="llm-batch">policy: LLM (batch plan)</option>
-      <option value="llm">policy: LLM (per obstacle)</option>
-      <option value="heuristic">policy: heuristic</option>
-    </select>
-    <button id="planner">Start (planner)</button>
-    <button id="pause" disabled>Pause</button>
-    <button id="abort" disabled>Abort agent</button>
-    <label>seed <input id="seed" size="11" placeholder="random" /></label>
-    <button id="share" title="copy a link that replays this exact run">share</button>
-    <span id="stats">score 0</span>
-    <span id="best"></span>
+  <div class="wrap">
+    <h1>Obstacle Runner <small>grid runner with an LLM agent</small></h1>
+    <canvas id="game"></canvas>
+
+    <div id="bar">
+      <button id="start" class="primary">Start (human)</button>
+      <button id="agent">Start (agent)</button>
+      <select id="policy" title="decision policy used inside the agent loop">
+        <option value="llm-batch">policy: LLM (batch plan)</option>
+        <option value="llm">policy: LLM (per obstacle)</option>
+        <option value="heuristic">policy: heuristic</option>
+      </select>
+      <button id="planner">Start (planner)</button>
+      <button id="pause" disabled>Pause</button>
+      <button id="abort" class="danger" disabled>Abort agent</button>
+      <label>seed <input id="seed" placeholder="random" /></label>
+      <button id="share" title="copy a link that replays this exact run">share</button>
+    </div>
+
+    <div id="hud">
+      <span class="chip" id="stats">score 0</span>
+      <span class="chip" id="best"></span>
+    </div>
+
+    <p class="hint">
+      <kbd>Space</kbd> start &middot; <kbd>Space</kbd> jump over
+      <span class="low">low</span> obstacles &middot;
+      <kbd>&darr;</kbd> duck under <span class="high">high</span> ones.<br />
+      Tap again to extend for wider obstacles. Standing still loses to both, and
+      over-committing costs recovery time.
+    </p>
+
+    <div id="log"></div>
   </div>
-  <p class="hint">
-    <b>Space</b> = jump over <span class="low">low</span> obstacles &middot;
-    <b>&darr;</b> = duck under <span class="high">high</span> ones.
-    Tap again to extend for wider obstacles. Standing still loses to both.
-  </p>
-  <div id="log"></div>
   <script type="module" src="./main.js"></script>
 </body>
 </html>

@@ -184,6 +184,8 @@ function tick(now) {
   draw(ctx, game, alpha, prevPose, {
     shake: Math.max(0, 1 - (now - deathAt) / 380),
     pulse: Math.max(0, 1 - (now - clearedAt) / 260),
+    status: !running ? (game.alive && game.step === 0 ? "ready" : "over")
+          : arming ? "arming" : "playing",
   });
 }
 requestAnimationFrame(tick);
@@ -210,6 +212,15 @@ addEventListener("keydown", (e) => {
   if (!type) return;
   e.preventDefault();
   if (e.repeat) return;              // ignore key auto-repeat from a held key
+
+  // Space doubles as start/restart, so a run begins without reaching for the
+  // mouse. Only when idle - mid-run it is still the jump key.
+  if (!running && e.code === "Space") {
+    agent?.stop("human took over");
+    agent = null;
+    newGame("human");
+    return;
+  }
   humanPress(type);
 });
 

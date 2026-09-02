@@ -1,18 +1,47 @@
-import { LANE_LEN, LANE_WIDTH, PLAYER_COL, LOW, HIGH, EMPTY, POSE } from "./engine.js";
+import { LANE_LEN, LANE_WIDTH, PLAYER_COL, LOW, HIGH, EMPTY, POSE, difficulty }
+  from "./engine.js";
 
 export const CELL = 40;
-const ROWS_H = CELL * 5;
-const GROUND_Y = CELL * 3.5;          // top of a standing player
-const FLOOR_Y = GROUND_Y + CELL;      // the ground line itself
-const AIR_TOP = GROUND_Y - CELL * 1.4;
+const ROWS_H = CELL * 6.5;
+const FLOOR_Y = CELL * 5.25;          // the ground line
+const GROUND_Y = FLOOR_Y - CELL;      // top of a standing player
 
 // Geometry chosen so the rules are visually true: a high obstacle overlaps a
 // standing player and a jumping one, but passes clear over a crouch.
+const AIR_TOP = GROUND_Y - CELL * 1.4;
 const HIGH_TOP = GROUND_Y - CELL * 0.6;
 const DUCK_TOP = GROUND_Y + CELL * 0.45;
-
-const COLOR = { [LOW]: "#2f4858", [HIGH]: "#b4531f" };
 const SLOPE = CELL * 0.3;
+
+// Two palettes, blended by the difficulty curve, so the world darkens as the
+// game gets harder rather than on a timer of its own.
+const DAY = {
+  skyTop: "#79c2ff", skyBottom: "#d9f0ff", hillFar: "#93c9a6", hillNear: "#6fb083",
+  earth: "#d9c9a3", earthLine: "#b9a880", cloud: "#ffffff",
+  low: "#2f7d4f", lowDark: "#1e5b38", high: "#e0651c", highDark: "#a8430c",
+  text: "#20303c", shadow: "rgba(0,0,0,0.18)",
+};
+const NIGHT = {
+  skyTop: "#0d1430", skyBottom: "#31406e", hillFar: "#1d2b4a", hillNear: "#152039",
+  earth: "#2b2f42", earthLine: "#1b1f2e", cloud: "#8fa3c8",
+  low: "#37b978", lowDark: "#1c6b45", high: "#ff8a3d", highDark: "#b04f14",
+  text: "#dbe6f5", shadow: "rgba(0,0,0,0.45)",
+};
+
+const hex = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+const mix = (a, b, t) => {
+  const [r1, g1, b1] = hex(a), [r2, g2, b2] = hex(b);
+  return `rgb(${Math.round(r1 + (r2 - r1) * t)},${Math.round(g1 + (g2 - g1) * t)},` +
+         `${Math.round(b1 + (b2 - b1) * t)})`;
+};
+function paletteFor(step) {
+  const t = difficulty(step);
+  const out = {};
+  for (const k of Object.keys(DAY)) {
+    out[k] = k === "shadow" ? (t > 0.5 ? NIGHT.shadow : DAY.shadow) : mix(DAY[k], NIGHT[k], t);
+  }
+  return out;
+}
 
 export function setupCanvas(canvas) {
   canvas.width = LANE_WIDTH * CELL;
@@ -20,14 +49,79 @@ export function setupCanvas(canvas) {
   return canvas.getContext("2d");
 }
 
-// One polygon per run of like cells, so only a run's outer edges slope: a
-// width-1 obstacle is a peak, wider ones are plateaus with sloped ends.
-function drawRun(ctx, kind, i, w, alpha) {
+function drawSky(ctx, p, w) {
+  const g = ctx.createLinearGradient(0, 0, 0, FLOOR_Y);
+  g.addColorStop(0, p.skyTop);
+  g.addColorStop(1, p.skyBottom);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, ROWS_H);
+}
+
+// Parallax: layers further away scroll slower, which is what sells the motion
+// on a lane that is otherwise a flat array of cells.
+function drawClouds(ctx, p, w, scroll) {
+  ctx.fillStyle = p.cloud;
+  ctx.globalAlpha = 0.75;
+  for (let i = 0; i < 6; i++) {
+    const span = w + 260;
+    const x = ((i * 173 + 40) - scroll * CELL * 0.08) % span;
+    const cx = x < -130 ? x + span : x;
+    const cy = 26 + ((i * 37) % 46);
+    const r = 13 + (i % 3) * 5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.arc(cx + r * 0.9, cy + 4, r * 0.75, 0, Math.PI * 2);
+    ctx.arc(cx - r * 0.9, cy + 5, r * 0.65, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawHills(ctx, color, w, scroll, speed, height, step) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, FLOOR_Y);
+  for (let x = 0; x <= w; x += 8) {
+    const t = (x + scroll * CELL * speed) / step;
+    ctx.lineTo(x, FLOOR_Y - height * (0.55 + 0.45 * Math.sin(t) * Math.cos(t * 0.37)));
+  }
+  ctx.lineTo(w, FLOOR_Y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawGround(ctx, p, w, scroll) {
+  ctx.fillStyle = p.earth;
+  ctx.fillRect(0, FLOOR_Y, w, ROWS_H - FLOOR_Y);
+  ctx.strokeStyle = p.earthLine;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, FLOOR_Y + 1);
+  ctx.lineTo(w, FLOOR_Y + 1);
+  ctx.stroke();
+
+  // Dashes on the floor move at full speed, giving the eye something to track.
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (let i = -1; i < LANE_WIDTH + 1; i++) {
+    const x = (i - (scroll % 1)) * CELL + (i * 17 % 11);
+    ctx.moveTo(x, FLOOR_Y + 14 + (i % 3) * 9);
+    ctx.lineTo(x + 12, FLOOR_Y + 14 + (i % 3) * 9);
+  }
+  ctx.stroke();
+}
+
+function drawRun(ctx, p, kind, i, w, alpha) {
   const x0 = (i - alpha) * CELL + 1;
   const x1 = (i + w - alpha) * CELL - 1;
-  ctx.fillStyle = COLOR[kind];
+  const light = kind === LOW ? p.low : p.high;
+  const dark = kind === LOW ? p.lowDark : p.highDark;
 
   if (kind === LOW) {
+    const g = ctx.createLinearGradient(0, GROUND_Y, 0, FLOOR_Y);
+    g.addColorStop(0, light);
+    g.addColorStop(1, dark);
+    ctx.fillStyle = g;
     ctx.beginPath();
     ctx.moveTo(x0, FLOOR_Y);
     ctx.lineTo(x0 + SLOPE, GROUND_Y + 1);
@@ -37,8 +131,11 @@ function drawRun(ctx, kind, i, w, alpha) {
     ctx.fill();
     return;
   }
-  // High obstacles hang in the air, so they taper at both top and bottom.
   const mid = HIGH_TOP + CELL / 2;
+  const g = ctx.createLinearGradient(0, HIGH_TOP, 0, HIGH_TOP + CELL);
+  g.addColorStop(0, light);
+  g.addColorStop(1, dark);
+  ctx.fillStyle = g;
   ctx.beginPath();
   ctx.moveTo(x0, mid);
   ctx.lineTo(x0 + SLOPE, HIGH_TOP);
@@ -50,48 +147,10 @@ function drawRun(ctx, kind, i, w, alpha) {
   ctx.fill();
 }
 
-// alpha = fraction of the way from the last logical step to the next one.
-// fx carries decaying 0..1 feedback values, so the renderer owns the look and
-// main.js only says what happened and when.
-export function draw(ctx, g, alpha, prevPose = POSE.STAND, fx = {}) {
-  const w = LANE_WIDTH * CELL;
-  const shake = fx.shake ?? 0;
-
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, w, ROWS_H);
-  ctx.fillStyle = shake > 0 ? `rgba(255,${Math.round(247 - 90 * shake)},${Math.round(247 - 90 * shake)},1)`
-                            : "#f7f7f7";
-  ctx.fillRect(0, 0, w, ROWS_H);
-  if (shake > 0) {
-    // Decaying jolt on death. Sign alternates per frame so it reads as a shake
-    // rather than a drift.
-    const mag = shake * shake * 7;
-    ctx.translate((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag);
-  }
-
-  ctx.strokeStyle = "#bbb";
-  ctx.beginPath();
-  ctx.moveTo(0, FLOOR_Y + 0.5);
-  ctx.lineTo(w, FLOOR_Y + 0.5);
-  ctx.stroke();
-
-  for (let i = 0; i < LANE_LEN; i++) {
-    const kind = g.lane[i];
-    if (kind === EMPTY) continue;
-    let run = 0;
-    while (i + run < LANE_LEN && g.lane[i + run] === kind) run++;
-    drawRun(ctx, kind, i, run, alpha);
-    i += run - 1;
-  }
-
-  drawPlayer(ctx, g, alpha, prevPose, fx.pulse ?? 0);
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-}
-
 const topFor = (pose) =>
   pose === POSE.AIR ? AIR_TOP : pose === POSE.DUCK ? DUCK_TOP : GROUND_Y;
 
-function drawPlayer(ctx, g, alpha, prevPose, pulse) {
+function drawPlayer(ctx, p, g, alpha, prevPose, pulse) {
   // Rise fast, drop late. Collision is unchanged - this only stretches the
   // apparent hang time and keeps the sprite clear of the obstacle it just passed.
   const pose = g.poseNow;
@@ -101,23 +160,85 @@ function drawPlayer(ctx, g, alpha, prevPose, pulse) {
   const t = rising ? Math.min(1, alpha / 0.45) : Math.max(0, (alpha - 0.45) / 0.55);
   const ease = t * t * (3 - 2 * t);
   const y = from + (to - from) * ease;
-
   const cx = PLAYER_COL * CELL + CELL / 2;
+
+  // Shadow shrinks with height, which reads as altitude without a second sprite.
+  const lift = (FLOOR_Y - CELL - y) / (CELL * 1.4);
+  ctx.fillStyle = p.shadow;
+  ctx.beginPath();
+  ctx.ellipse(cx, FLOOR_Y + 3, CELL * (0.42 - lift * 0.16), CELL * 0.1, 0, 0, Math.PI * 2);
+  ctx.fill();
+
   if (pulse > 0) {
-    // Expanding ring as an obstacle passes under an intact player.
-    ctx.strokeStyle = `rgba(63,163,77,${pulse * 0.8})`;
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = `rgba(120,235,170,${pulse * 0.85})`;
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(cx, y + CELL / 2, CELL * (0.5 + (1 - pulse) * 0.7), 0, Math.PI * 2);
+    ctx.arc(cx, y + CELL / 2, CELL * (0.5 + (1 - pulse) * 0.8), 0, Math.PI * 2);
     ctx.stroke();
   }
 
   const ducking = pose === POSE.DUCK;
-  const size = ducking ? CELL * 0.55 : CELL - 4;
-  ctx.font = `${size}px serif`;
+  ctx.font = `${ducking ? CELL * 0.55 : CELL - 4}px serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.globalAlpha = g.alive ? 1 : 0.45;
+  ctx.globalAlpha = g.alive ? 1 : 0.5;
   ctx.fillText("\u{1F996}", cx, y + (ducking ? (FLOOR_Y - DUCK_TOP) / 2 : CELL / 2));
   ctx.globalAlpha = 1;
+}
+
+function drawOverlay(ctx, p, w, status, g) {
+  if (status !== "ready" && status !== "over" && status !== "arming") return;
+  ctx.fillStyle = "rgba(0,0,0,0.42)";
+  ctx.fillRect(0, 0, w, ROWS_H);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fff";
+
+  const title = status === "over" ? `score ${g.score}`
+              : status === "arming" ? "agent is thinking…" : "Obstacle Runner";
+  ctx.font = "bold 30px system-ui, sans-serif";
+  ctx.fillText(title, w / 2, ROWS_H / 2 - 10);
+
+  if (status !== "arming") {
+    ctx.font = "15px system-ui, sans-serif";
+    ctx.fillStyle = "#cfe6ff";
+    ctx.fillText(status === "over" ? "press SPACE to play again" : "press SPACE to start",
+      w / 2, ROWS_H / 2 + 20);
+  }
+}
+
+// alpha = fraction of the way from the last logical step to the next one.
+// fx carries decaying 0..1 feedback values plus the run status, so the renderer
+// owns the look and main.js only says what happened and when.
+export function draw(ctx, g, alpha, prevPose = POSE.STAND, fx = {}) {
+  const w = LANE_WIDTH * CELL;
+  const p = paletteFor(g.step);
+  const scroll = g.step + alpha;
+  const shake = fx.shake ?? 0;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  drawSky(ctx, p, w);
+  if (shake > 0) {
+    const mag = shake * shake * 8;
+    ctx.translate((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag);
+    ctx.fillStyle = `rgba(220,40,40,${shake * 0.25})`;
+    ctx.fillRect(-20, -20, w + 40, ROWS_H + 40);
+  }
+
+  drawClouds(ctx, p, w, scroll);
+  drawHills(ctx, p.hillFar, w, scroll, 0.12, CELL * 1.5, 90);
+  drawHills(ctx, p.hillNear, w, scroll, 0.28, CELL * 0.9, 55);
+  drawGround(ctx, p, w, scroll);
+
+  for (let i = 0; i < LANE_LEN; i++) {
+    const kind = g.lane[i];
+    if (kind === EMPTY) continue;
+    let run = 0;
+    while (i + run < LANE_LEN && g.lane[i + run] === kind) run++;
+    drawRun(ctx, p, kind, i, run, alpha);
+    i += run - 1;
+  }
+
+  drawPlayer(ctx, p, g, alpha, prevPose, fx.pulse ?? 0);
+  drawOverlay(ctx, p, w, fx.status, g);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 }

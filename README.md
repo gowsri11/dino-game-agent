@@ -19,6 +19,7 @@ Human mode needs no credentials.
 - Obstacles are height 1, width 1/2/3, always separated by >= 4 empty cells. Each run
   of cells is drawn as one polygon with sloped outer edges — a width-1 obstacle is a
   peak, wider ones are plateaus. Collision stays whole-cell; the slope is cosmetic.
+- **Space** starts a run when idle, and jumps once it is running.
 - **Space** = jump, applied on the keypress itself (not the next step boundary).
   Tap again mid-air to extend.
 - Airtime is **width + 1** cells. The spare cell absorbs the fact that a press lands
@@ -35,6 +36,14 @@ Human mode needs no credentials.
   apparent hang time and keeps the player clear of the obstacle it just passed,
   without touching collision.
 - Landing on a `1` ends the game. Speed ramps from 260ms to 120ms per step.
+
+## Look
+
+The scene is parallax - clouds, two hill layers and floor dashes each scroll at
+their own rate, which is what sells motion on a lane that is otherwise a flat
+array of cells. The palette blends from day to night driven by the difficulty
+curve rather than a timer of its own, so the world darkens exactly as the game
+gets harder. Obstacle colours stay high-contrast in both.
 
 ## Seeds
 
