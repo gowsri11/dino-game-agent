@@ -53,6 +53,7 @@ function findObstacles(lane, playerIndex) {
     if (kind !== "1" && kind !== "2") continue;
     let w = 0;
     while (i + w < lane.length && lane[i + w] === kind) w++;
+    if (i + w >= lane.length) break;   // still arriving; its width is not final yet
     const stepsAway = i - playerIndex;
     if (stepsAway >= 2) {
       out.push({ width: w, stepsAway,

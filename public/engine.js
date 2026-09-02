@@ -8,7 +8,15 @@ export const MAX_JUMP = 3;
 // Airtime is width + 1. The spare cell absorbs the fact that a press lands at an
 // arbitrary point inside a cell, and lets liftoff happen a step before contact.
 export const MAX_AIR = MAX_JUMP + 1;
-export const MIN_GAP = 4;            // empty cells forced after every obstacle
+// Recovery after an action costs as many cells as the width committed to, so an
+// oversized action is not free. The gap after an obstacle is sized to let a
+// correctly-sized action recover in time and no more - that is what gives width
+// a consequence. See ROADMAP.md for why punishing via a tight gap alone cannot
+// work: solvability needs a wide gap and punishment needs a narrow one.
+export const GAP_BASE = 3;
+export const gapFor = (width) => 2 * width + GAP_BASE;
+export const MIN_GAP = gapFor(MAX_JUMP);      // worst-case gap, used for the lead-in
+const EXTRA_GAP = 5;                 // random slack on top, for rhythm
 export const START_STEP_MS = 260;
 export const MIN_STEP_MS = 120;
 export const RAMP_EVERY = 25;
@@ -51,7 +59,9 @@ function createGenerator(rand, leadIn) {
       const width = 1 + Math.floor(rand() * MAX_JUMP);
       pendingKind = rand() < HIGH_CHANCE ? HIGH : LOW;
       pending = width - 1;
-      cooldown = MIN_GAP;
+      // width + GAP_BASE is the tightest gap a correctly-sized action can clear;
+      // the random slack varies the rhythm without ever going below it.
+      cooldown = gapFor(width) + Math.floor(rand() * (EXTRA_GAP + 1));
       return pendingKind;
     }
     return EMPTY;
@@ -67,7 +77,8 @@ export function createGame(seed = Date.now()) {
     airCells: 0,      // cells still to be spent airborne, including this step
     duckCells: 0,     // same countdown for the crouch
     extendsLeft: 0,   // how much more the current jump or duck may be stretched
-    groundCooldown: 0,// forces one grounded step between jumps (no space-mashing)
+    actionWidth: 0,   // width committed to, which sets the recovery cost
+    groundCooldown: 0,// recovery cells owed after the current action ends
     // The pose the player held for the cell currently under them. This is the
     // display truth; airCells/duckCells are countdowns and drop a step ahead of it.
     poseNow: POSE.STAND,
@@ -97,12 +108,14 @@ export function applyAction(g, action) {
       if (g.extendsLeft <= 0) return false;
       g.airCells += 1;
       g.extendsLeft -= 1;
+      g.actionWidth += 1;                       // a longer jump costs more recovery
       return true;
     }
     if (g.groundCooldown > 0) return false;
     g.duckCells = 0;                            // a jump cancels a crouch
     g.airCells = w + 1;
     g.extendsLeft = MAX_AIR - g.airCells;
+    g.actionWidth = w;
     return true;
   }
 
@@ -112,10 +125,13 @@ export function applyAction(g, action) {
       if (g.extendsLeft <= 0) return false;
       g.duckCells += 1;
       g.extendsLeft -= 1;
+      g.actionWidth += 1;
       return true;
     }
+    if (g.groundCooldown > 0) return false;
     g.duckCells = w + 1;
     g.extendsLeft = MAX_AIR - g.duckCells;
+    g.actionWidth = w;
     return true;
   }
 
@@ -127,7 +143,7 @@ export function step(g, action) {
   if (!g.alive) return g;
 
   applyAction(g, action);
-  if (g.airCells === 0 && g.groundCooldown > 0) g.groundCooldown--;
+  if (g.airCells === 0 && g.duckCells === 0 && g.groundCooldown > 0) g.groundCooldown--;
 
   g.lane.shift();
   g.lane.push(g.nextCell());
@@ -148,13 +164,24 @@ export function step(g, action) {
   g.score++;
   if (g.airCells > 0) {
     g.airCells--;
-    if (g.airCells === 0) { g.extendsLeft = 0; g.groundCooldown = 1; }
+    if (g.airCells === 0) endAction(g);
   } else if (g.duckCells > 0) {
     g.duckCells--;
-    if (g.duckCells === 0) g.extendsLeft = 0;
+    if (g.duckCells === 0) endAction(g);
   }
   if (g.step % RAMP_EVERY === 0) g.stepMs = Math.max(MIN_STEP_MS, g.stepMs - RAMP_MS);
   return g;
+}
+
+// Recovery is charged in proportion to what was committed, so over-committing is
+// paid for even though the action itself succeeded.
+function endAction(g) {
+  g.extendsLeft = 0;
+  // Doubling makes the cost superlinear, so one size too big overshoots the gap
+  // by two cells while a correctly-sized action clears it with one to spare.
+  // A linear cost lands exactly on the solvability boundary and breaks.
+  g.groundCooldown = 2 * g.actionWidth;
+  g.actionWidth = 0;
 }
 
 // What the agent sees. Deliberately tiny.

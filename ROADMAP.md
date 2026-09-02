@@ -6,7 +6,7 @@ Tracking for the "make it a better game" work. Each item is one commit.
 |---|------|--------|
 | 1 | Roadmap + tracking | done |
 | 2 | Duck verb and high obstacles | done |
-| 3 | Variable gaps so over-jumping is punished | todo |
+| 3 | Recovery cost scaled to commitment; variable gaps | done |
 | 4 | Difficulty curve that does not plateau | todo |
 | 5 | Authored obstacle patterns | todo |
 | 6 | Seed sharing, high score, feedback | todo |
@@ -30,10 +30,17 @@ engine, observer, agent scheduling and prompts.
 differently-sized one, so it is distinguishable with no timing margin at all.
 Three responses - tap, double-tap, duck - where there were two.
 
-**Tight gaps (3).** Today `MIN_GAP` is a constant 4, so landing late is always
-safe and over-jumping costs nothing. Variable gaps make an oversized jump land on
-the next obstacle, which is what gives width a consequence.
+**Recovery cost (3).** Punishing an oversized jump with a tight gap turns out to
+be impossible: solvability needs a wide gap (the player must land and recover
+before the next obstacle) and punishment needs a narrow one. Directly
+contradictory.
 
-Solvability stays provable: the generator guarantees enough room after each
-obstacle for a correctly-sized jump to land and for the landing cooldown to clear
-before the next one.
+What works instead is charging recovery in proportion to the width committed to.
+An oversized action succeeds but leaves the player still recovering when the next
+obstacle lands. The cost is `2 x width`, deliberately superlinear: a linear cost
+lands exactly on the solvability boundary, where a correctly-sized action only
+just survives and any off-by-one breaks it. Doubling gives a correct action one
+cell of slack and makes an oversized one miss by two.
+
+Gaps are `2 x width + 3` plus random slack, so the punishment bites at the
+tightest spacing and wide sections stay forgiving.

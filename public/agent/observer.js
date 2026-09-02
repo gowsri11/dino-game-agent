@@ -9,11 +9,22 @@ import { PLAYER_COL, MAX_JUMP, LANE_LEN, EMPTY, HIGH, POSE, poseOf } from "../en
 // are ducked, and standing still loses to either.
 export function observeGameState(g) {
   const obstacles = [];
-  for (let i = PLAYER_COL + 1; i < LANE_LEN; i++) {
+  // Scan from the very left, not from the player. Starting mid-lane can begin
+  // inside an obstacle that is half past the player, and its trailing cell then
+  // reads as a fresh narrow obstacle arriving a step later - a phantom that gets
+  // acted on twice, extending one jump into an over-commitment.
+  for (let i = 0; i < LANE_LEN; i++) {
     const kind = g.lane[i];
     if (kind === EMPTY) continue;
     let width = 0;
     while (i + width < LANE_LEN && g.lane[i + width] === kind) width++;
+    // A run touching the right edge may still be arriving, so its leading cell
+    // and true width are not known yet. Reporting it produces a phantom narrow
+    // obstacle at a later arrival step, and acting on both that and the real one
+    // extends a single jump into an over-commitment. It is fully visible next
+    // step, with ~18 steps of runway still to spare.
+    if (i + width >= LANE_LEN) break;
+    if (i <= PLAYER_COL) { i += width - 1; continue; }   // arrived or already past
     const high = kind === HIGH;
     obstacles.push({
       kind: high ? "high" : "low",

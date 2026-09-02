@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createGame, step, applyAction, observe, poseOf,
-  PLAYER_COL, MAX_JUMP, MIN_GAP, LANE_LEN, EMPTY, LOW, HIGH, POSE,
+  PLAYER_COL, MAX_JUMP, MIN_GAP, gapFor, LANE_LEN, EMPTY, LOW, HIGH, POSE,
 } from "../public/engine.js";
 
 function runLength(lane, from) {
@@ -12,7 +12,7 @@ function runLength(lane, from) {
   return n;
 }
 
-test("generator: obstacles are at most 3 wide and always followed by >= 4 gap cells", () => {
+test("generator: obstacles are at most 3 wide and leave width+GAP_BASE of gap", () => {
   for (let seed = 0; seed < 50; seed++) {
     const g = createGame(seed);
     const cells = [...g.lane];
@@ -23,10 +23,12 @@ test("generator: obstacles are at most 3 wide and always followed by >= 4 gap ce
       if (cells[i] === EMPTY) { i++; continue; }
       const w = runLength(cells, i);
       assert.ok(w >= 1 && w <= MAX_JUMP, `seed ${seed}: width ${w} at ${i}`);
-      const gap = cells.slice(i + w, i + w + MIN_GAP);
-      if (i + w + MIN_GAP <= cells.length) {
-        assert.ok(gap.every((c) => c === 0),
-          `seed ${seed}: only ${gap.join("")} after obstacle at ${i}`);
+      // The gap must cover the recovery a correctly-sized action costs.
+      const need = gapFor(w);
+      const gap = cells.slice(i + w, i + w + need);
+      if (i + w + need <= cells.length) {
+        assert.ok(gap.every((c) => c === EMPTY),
+          `seed ${seed}: only ${gap.join("")} after width-${w} obstacle at ${i}`);
       }
       i += w;
     }
@@ -140,15 +142,21 @@ test("space-mashing cannot keep the player airborne forever", () => {
 function planFrom(obs) {
   const lane = obs.lane.split("").map(Number);
   const actions = [];
-  let i = obs.playerIndex + 2;
+  // Scan from the left so every run is found by its true leading cell, then
+  // filter by distance. Starting the scan mid-lane bisects a half-passed
+  // obstacle and invents a phantom one behind it.
+  let i = 0;
   while (i < lane.length) {
     if (lane[i] === EMPTY) { i++; continue; }
     const w = runLength(lane, i);
-    actions.push({
-      atStep: obs.currentStep + (i - obs.playerIndex),
-      action: lane[i] === HIGH ? "duck" : "jump",
-      width: w,
-    });
+    if (i + w >= lane.length) break;   // still arriving; its width is not final yet
+    if (i - obs.playerIndex >= 2) {
+      actions.push({
+        atStep: obs.currentStep + (i - obs.playerIndex),
+        action: lane[i] === HIGH ? "duck" : "jump",
+        width: w,
+      });
+    }
     i += w;
   }
   return actions;
@@ -176,4 +184,65 @@ test("a reference planner using the documented atStep rule survives indefinitely
     assert.ok(g.alive, `seed ${seed}: perfect planner died at step ${g.step}`);
     assert.equal(g.score, 2000);
   }
+});
+
+
+// --- committing to more than you need is paid for ---------------------------
+
+// Two obstacles spaced exactly as the generator spaces them: the tightest lane a
+// correctly-sized action can survive.
+function twoObstacles(width, actWidth) {
+  const g = createGame(1);
+  g.lane = Array(LANE_LEN).fill(EMPTY);
+  const first = PLAYER_COL + 1;
+  for (let k = 0; k < width; k++) g.lane[first + k] = LOW;
+  const second = first + width + gapFor(width);   // the tightest legal spacing
+  g.lane[second] = LOW;
+  g.nextCell = () => EMPTY;
+
+  const secondArrivesIn = second - PLAYER_COL;
+  applyAction(g, { type: "jump", width: actWidth });
+  for (let i = 1; i <= secondArrivesIn && g.alive; i++) {
+    // Act for the second obstacle on the last step before it lands. Acting for
+    // the first one already happened above; re-acting here would extend it.
+    if (i === secondArrivesIn - 1) applyAction(g, { type: "jump", width: 1 });
+    step(g, null);
+  }
+  return g.alive;
+}
+
+test("a correctly-sized jump recovers in time for the next obstacle", () => {
+  for (const w of [1, 2, 3]) {
+    assert.ok(twoObstacles(w, w), `width ${w}: the right-sized jump must survive`);
+  }
+});
+
+test("an oversized jump is still recovering when the next obstacle lands", () => {
+  for (const w of [1, 2]) {
+    assert.equal(twoObstacles(w, w + 1), false,
+      `width ${w}: jumping one size too big must cost the next obstacle`);
+  }
+});
+
+test("recovery is charged in proportion to the width committed", () => {
+  let last = -1;
+  for (const w of [1, 2, 3]) {
+    const g = createGame(1);
+    g.lane = Array(LANE_LEN).fill(EMPTY);
+    g.nextCell = () => EMPTY;
+    applyAction(g, { type: "jump", width: w });
+    while (g.airCells > 0) step(g, null);
+    assert.equal(g.groundCooldown, 2 * w, `width ${w} should owe ${2 * w} cells`);
+    assert.ok(g.groundCooldown > last, "wider commitments must cost strictly more");
+    last = g.groundCooldown;
+  }
+});
+
+test("an oversized duck is punished the same way as an oversized jump", () => {
+  const g = createGame(1);
+  g.lane = Array(LANE_LEN).fill(EMPTY);
+  g.nextCell = () => EMPTY;
+  applyAction(g, { type: "duck", width: 3 });
+  while (g.duckCells > 0) step(g, null);
+  assert.equal(g.groundCooldown, 6, "duck recovery is charged like jump recovery");
 });
