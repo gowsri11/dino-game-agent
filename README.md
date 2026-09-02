@@ -53,9 +53,11 @@ gets harder. Obstacle colours stay high-contrast in both.
 
 ## Seeds
 
-The generator is seeded, so a run is reproducible. The seed box shows the current
-run's seed and accepts one to replay; `share` copies a `?seed=` link. Same seed,
-same lane - which is what makes a human score and an agent score comparable.
+The generator is seeded, so a run is reproducible. The seed box is an *override*:
+leave it blank for a fresh lane every run, or type a number to replay that one.
+The seed actually in use is shown in the HUD, and `share` copies a `?seed=` link.
+Same seed, same lane - which is what makes a human score and an agent score
+comparable.
 
 ## Design
 

@@ -1,5 +1,5 @@
 import { createGame, step, applyAction, observe, POSE, PLAYER_COL, EMPTY } from "./engine.js";
-import { setupCanvas, draw } from "./render.js";
+import { setupCanvas, draw, CONTACT_ALPHA } from "./render.js";
 import { EventBus } from "./agent/events.js";
 import { createTools } from "./agent/tools.js";
 import { Agent } from "./agent/agent.js";
@@ -30,6 +30,7 @@ function recordBest(score) {
 let game = createGame();
 let deathAt = 0;      // for the death shake
 let clearedAt = 0;    // for the obstacle-cleared pulse
+let boostAt = 0;      // for the mid-air extend kick
 let mode = "human";      // "human" | "agent"
 let running = false, paused = false, aborted = false;
 let arming = false;   // agent mode: hold the world still until the first plan lands
@@ -42,7 +43,12 @@ const scheduled = new Map();   // atStep -> width
 let inFlight = null;           // AbortController
 let lastPlanStep = -999;
 const REPLAN_EVERY = 5;        // steps
-const LATE_PRESS = 0.45;       // fraction of a step after which a tap is too late
+// Derived from the sprite geometry rather than picked: this is the instant the
+// arriving obstacle's leading edge first touches the dino on screen. Past it, a
+// tap no longer protects against that cell, so "too late" looks the same as it
+// behaves. Was a guessed 0.45, which let you jump with the dino visibly buried
+// in the obstacle.
+const LATE_PRESS = CONTACT_ALPHA;
 
 // --- agent wiring ---------------------------------------------------------
 const events = new EventBus();
@@ -99,17 +105,21 @@ function stats() {
               : (aborted ? "aborted" : "running");
   $("stats").textContent =
     `mode ${mode} | ${state} | score ${game.score} | step ${game.step} | ${game.stepMs}ms/step`;
+  $("seedout").textContent = `seed ${game.seed}`;
   const best = readBest();
   $("best").textContent = best ? `best ${best}` : "";
   $("best").hidden = !best;
 }
 
 function newGame(nextMode) {
+  // The box is an override, not a display: leaving it blank means "new lane every
+  // run". Overwriting it with the seed just used silently pinned every later run
+  // to the first one's lane.
   const wanted = Number($("seed").value.trim());
   game = createGame(Number.isFinite(wanted) && wanted > 0 ? wanted : undefined);
-  $("seed").value = String(game.seed);
   deathAt = 0;
   clearedAt = 0;
+  boostAt = 0;
   mode = nextMode;
   running = true; paused = false; aborted = false; arming = false;
   bufferedAction = null;
@@ -213,6 +223,7 @@ function tick(now) {
   draw(ctx, game, alpha, prevPose, {
     shake: Math.max(0, 1 - (now - deathAt) / 380),
     pulse: Math.max(0, 1 - (now - clearedAt) / 260),
+    boost: Math.max(0, 1 - (now - boostAt) / 240),
     status: !running ? (game.alive && game.step === 0 ? "ready" : "over")
           : arming ? "arming" : "playing",
   });
@@ -229,8 +240,12 @@ function humanPress(type = "jump") {
   // forfeits protection against the cell already sliding on, so you clip it.
   const late = stepAge() >= LATE_PRESS;
   const wasIdle = game.airCells === 0 && game.duckCells === 0;
+  const wasAirborne = game.airCells > 0;
   const applied = applyAction(game, { type });
   if (applied && late && wasIdle) game.lateAction = true;
+  // An accepted tap while already airborne extended the jump; give it a kick so
+  // the extra tap is visible rather than silently changing a counter.
+  if (applied && wasAirborne) boostAt = performance.now();
   bufferedAction = applied ? null : type;
 }
 

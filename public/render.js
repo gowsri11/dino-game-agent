@@ -13,6 +13,14 @@ const HIGH_TOP = GROUND_Y - CELL * 0.6;
 const DUCK_TOP = GROUND_Y + CELL * 0.45;
 const SLOPE = CELL * 0.3;
 
+// Half the sprite's visible width, in cells. The obstacle arriving next step is
+// drawn sliding from cell PLAYER_COL+1 toward PLAYER_COL, so its leading edge
+// first touches the sprite at this fraction of the step. Input timing is derived
+// from it rather than guessed, so "too late" means the same thing on screen as
+// it does in the rules.
+export const SPRITE_HALF = 0.34;
+export const CONTACT_ALPHA = Math.max(0, 0.5 - SPRITE_HALF);
+
 // Two palettes, blended by the difficulty curve, so the world darkens as the
 // game gets harder rather than on a timer of its own.
 const DAY = {
@@ -164,7 +172,7 @@ function arcLift(g, alpha) {
   return extra * 4 * p * (1 - p);               // parabola, peaking mid-jump
 }
 
-function drawPlayer(ctx, p, g, alpha, prevPose, pulse) {
+function drawPlayer(ctx, p, g, alpha, prevPose, pulse, fx) {
   // Rise fast, drop late. Collision is unchanged - this only stretches the
   // apparent hang time and keeps the sprite clear of the obstacle it just passed.
   const pose = g.poseNow;
@@ -175,7 +183,10 @@ function drawPlayer(ctx, p, g, alpha, prevPose, pulse) {
   const ease = t * t * (3 - 2 * t);
   // The arc rides on top of the clearance height, so the sprite never dips back
   // toward an obstacle it is still passing over.
-  const y = from + (to - from) * ease - arcLift(g, alpha);
+  // A mid-air tap extends the jump but barely moved the sprite, so the extra tap
+  // registered as nothing. A short kick upward makes it land.
+  const boost = fx.boost ?? 0;
+  const y = from + (to - from) * ease - arcLift(g, alpha) - boost * CELL * 0.34;
   const cx = PLAYER_COL * CELL + CELL / 2;
 
   // Shadow shrinks with height, which reads as altitude without a second sprite.
@@ -193,6 +204,17 @@ function drawPlayer(ctx, p, g, alpha, prevPose, pulse) {
     ctx.stroke();
   }
 
+  if (boost > 0) {
+    // A puff under the feet, so the kick has a cause.
+    ctx.fillStyle = `rgba(255,255,255,${boost * 0.7})`;
+    for (const dx of [-9, 0, 9]) {
+      ctx.beginPath();
+      ctx.arc(cx + dx * (1.4 - boost), y + CELL * 1.05 + (1 - boost) * 8,
+              4 + (1 - boost) * 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   const ducking = pose === POSE.DUCK;
   const cy = y + (ducking ? (FLOOR_Y - DUCK_TOP) / 2 : CELL / 2);
 
@@ -203,10 +225,11 @@ function drawPlayer(ctx, p, g, alpha, prevPose, pulse) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.globalAlpha = g.alive ? 1 : 0.5;
-  // Emoji ignore fillStyle, so a shadow is the only way to outline one. Three
-  // passes build up an opaque halo; a single pass is too faint to separate the
-  // sprite from a light sky.
+  // Emoji ignore fillStyle, so colour has to come from a canvas filter and the
+  // outline from shadow passes. Darkening the sprite is what actually separates
+  // it from a bright sky; the halo alone was not enough.
   ctx.save();
+  ctx.filter = "brightness(0.62) saturate(1.5) contrast(1.25)";
   ctx.shadowColor = "rgba(0,0,0,0.95)";
   for (const blur of [9, 6, 3]) {
     ctx.shadowBlur = blur;
@@ -268,7 +291,7 @@ export function draw(ctx, g, alpha, prevPose = POSE.STAND, fx = {}) {
     i += run - 1;
   }
 
-  drawPlayer(ctx, p, g, alpha, prevPose, fx.pulse ?? 0);
+  drawPlayer(ctx, p, g, alpha, prevPose, fx.pulse ?? 0, fx);
   drawOverlay(ctx, p, w, fx.status, g);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }

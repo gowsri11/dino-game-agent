@@ -107,12 +107,14 @@
       <button id="start" class="primary">Start</button>
       <button id="pause" disabled>Pause</button>
       <button id="abort" class="danger" disabled>Abort agent</button>
-      <label>seed <input id="seed" placeholder="random" /></label>
+      <label>seed <input id="seed" placeholder="random"
+             title="leave blank for a new lane each run; enter a number to replay one" /></label>
       <button id="share" title="copy a link that replays this exact run">share</button>
     </div>
 
     <div id="hud">
       <span class="chip" id="stats">score 0</span>
+      <span class="chip" id="seedout"></span>
       <span class="chip" id="best"></span>
       <span class="chip warn" id="warn" hidden></span>
     </div>
@@ -157,9 +159,11 @@
             policy fails, errors, or takes too long.</dd>
 
         <dt>seed / share</dt>
-        <dd>The seed fixes the lane. The same seed always generates the same
+        <dd>The seed fixes the lane: the same seed always generates the same
             obstacles, so a human run and an agent run can be compared on identical
-            terrain. <b>share</b> copies a link that replays this exact run.</dd>
+            terrain. Leave the box <b>blank</b> for a fresh lane every run, or type
+            a number to replay that one. The seed actually in use is shown below,
+            and <b>share</b> copies a <code>?seed=</code> link to it.</dd>
 
         <dt>pause / abort</dt>
         <dd><b>Pause</b> freezes the world; scheduled actions survive it because the
