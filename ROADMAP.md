@@ -5,7 +5,7 @@ Tracking for the "make it a better game" work. Each item is one commit.
 | # | Item | Status |
 |---|------|--------|
 | 1 | Roadmap + tracking | done |
-| 2 | Duck verb and high obstacles | todo |
+| 2 | Duck verb and high obstacles | done |
 | 3 | Variable gaps so over-jumping is punished | todo |
 | 4 | Difficulty curve that does not plateau | todo |
 | 5 | Authored obstacle patterns | todo |

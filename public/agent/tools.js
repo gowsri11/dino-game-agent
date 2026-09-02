@@ -9,7 +9,7 @@ export function createTools(ctx) {
   const {
     getGame,        // () => live game state
     startGame,      // () => begin a fresh run in agent mode
-    scheduleJump,   // (atStep, width) => queue a jump for a future step
+    scheduleAction, // (atStep, action, width) => queue a verb for a future step
     isRunning,      // () => whether the loop is stepping
     setFrozen,      // (bool) => hold the world still without ending the run
   } = ctx;
@@ -37,10 +37,10 @@ export function createTools(ctx) {
     },
 
     // Preferred path: name the step the obstacle arrives and let the loop fire
-    // the jump at the right moment, which is what makes LLM latency survivable.
-    scheduleJump(atStep, width) {
-      scheduleJump(atStep, width);
-      return { scheduled: true, atStep, width };
+    // the verb at the right moment, which is what makes LLM latency survivable.
+    scheduleAction(atStep, action, width) {
+      scheduleAction(atStep, action, width);
+      return { scheduled: true, atStep, action, width };
     },
 
     async waitTicks(n = 1) {

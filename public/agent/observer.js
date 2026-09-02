@@ -1,38 +1,41 @@
 // Converts engine internals into a compact, agent-readable state.
 // Nothing here mutates the game.
-import { PLAYER_COL, MAX_JUMP, LANE_LEN } from "../engine.js";
+import { PLAYER_COL, MAX_JUMP, LANE_LEN, EMPTY, HIGH, POSE, poseOf } from "../engine.js";
 
 // This game is a discrete grid, not a physics sim: there is no velocityY, every
-// obstacle is height 1, and positions are cell indices. `distance` is therefore
-// in steps, which is also exactly how long until the obstacle reaches the player.
+// obstacle is one row tall, and positions are cell indices. `distance` is
+// therefore in steps, which is also exactly how long until the obstacle lands.
+// `requiredAction` is the whole decision: low obstacles are jumped, high ones
+// are ducked, and standing still loses to either.
 export function observeGameState(g) {
-  // Every visible obstacle, nearest first. The agent needs more than the nearest:
-  // once it has committed to one, the next may be only a few steps behind it,
-  // which is less than a model round-trip.
   const obstacles = [];
   for (let i = PLAYER_COL + 1; i < LANE_LEN; i++) {
-    if (g.lane[i] !== 1) continue;
+    const kind = g.lane[i];
+    if (kind === EMPTY) continue;
     let width = 0;
-    while (i + width < LANE_LEN && g.lane[i + width] === 1) width++;
+    while (i + width < LANE_LEN && g.lane[i + width] === kind) width++;
+    const high = kind === HIGH;
     obstacles.push({
+      kind: high ? "high" : "low",
+      requiredAction: high ? "duck" : "jump",
       width,
-      height: 1,
-      type: `w${width}`,
-      distance: i - PLAYER_COL,             // steps until it is under the player
+      type: `${high ? "high" : "low"}-w${width}`,
+      distance: i - PLAYER_COL,
       arrivesAtStep: g.step + (i - PLAYER_COL),
     });
     i += width - 1;
   }
-  const nearest = obstacles[0] ?? null;
 
+  const pose = poseOf(g);
   return {
     dino: {
-      y: g.airborneNow ? 1 : 0,             // grid row, not pixels
-      isGrounded: g.airCells === 0,
+      pose,
+      isGrounded: pose !== POSE.AIR,
       airCells: g.airCells,
-      canJump: g.airCells === 0 && g.groundCooldown === 0,
+      duckCells: g.duckCells,
+      canAct: g.airCells === 0 && g.groundCooldown === 0,
     },
-    nearestObstacle: nearest,
+    nearestObstacle: obstacles[0] ?? null,
     obstacles,
     game: {
       step: g.step,
@@ -40,7 +43,7 @@ export function observeGameState(g) {
       speed: g.stepMs,                      // ms per step; lower is faster
       isGameOver: !g.alive,
     },
-    allowedActions: ["jump", "wait"],
+    allowedActions: ["jump", "duck", "wait"],
     maxJumpWidth: MAX_JUMP,
   };
 }

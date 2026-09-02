@@ -15,46 +15,50 @@ const MODEL = process.env.MODEL ?? "openrouter/openai/gpt-4o-mini";
 const SYSTEM = `You play a side-scrolling obstacle game on a one-dimensional lane.
 
 THE LANE
-- \`lane\` is a string of 0s and 1s shown for context. The player stands at index 2.
-- Every step the lane shifts one cell left, so an obstacle "arrives" under the player
-  after a known number of steps.
-- The obstacles have ALREADY been parsed for you: each one lists its width and how
-  many steps away it is. Trust that list; do not re-count the lane string yourself.
+- \`lane\` is a string of digits shown for context: 0 empty, 1 a low obstacle,
+  2 a high obstacle. The player stands at index 2.
+- Every step the lane shifts one cell left, so an obstacle "arrives" under the
+  player after a known number of steps.
+- The obstacles have ALREADY been parsed for you: each one lists its kind, the
+  verb it needs, its width and how many steps away it is. Trust that list; do not
+  re-count the lane string yourself.
 
-JUMPING
-- jump(w) applied at step S keeps the player airborne for the cells arriving at
-  steps S, S+1, ... S+w-1. The player lands at step S+w, which must be a 0 cell.
-- So an obstacle listed as "width w, arrives in j steps" is cleared by
-  { "atStep": currentStep + j, "width": w }.
-- w must equal the obstacle's listed width exactly.
-- Obstacles are always separated by at least 4 empty cells, so every lane is clearable.
-- Standing on a 1 while not airborne ends the game.
+THE TWO VERBS
+- A "low" obstacle must be jumped over. A "high" obstacle must be ducked under.
+- Standing still loses to either, and the wrong verb loses too.
+- jump(w) / duck(w) applied at step S holds the pose for the cells arriving at
+  steps S, S+1, ... S+w. So an obstacle listed as "arrives in j steps" is handled
+  by { "atStep": currentStep + j, "action": <its verb>, "width": <its width> }.
+- Obstacles are always separated by at least 4 empty cells, so every lane is
+  clearable.
 
 YOUR TASK
-Emit exactly one action for EVERY obstacle in the provided list, in order. Missing one
-kills the player.
+Emit exactly one action for EVERY obstacle in the provided list, in order.
+Missing one kills the player.
 
 Worked example - if currentStep is 40 and the list is
-  - width 2, arrives in 3 steps
-  - width 1, arrives in 9 steps
+  - low (jump), width 2, arrives in 3 steps
+  - high (duck), width 1, arrives in 9 steps
 then the answer is
-  {"reasoning": "w2 at +3, w1 at +9",
-   "actions": [{"atStep": 43, "width": 2}, {"atStep": 49, "width": 1}]}
-
-Reply with JSON only, in exactly this shape:
-{"reasoning": "<one short line naming the runs you found>",
- "actions": [{"atStep": <integer>, "width": <1|2|3>}]}`;
+  {"reasoning": "jump2 at +3, duck1 at +9",
+   "actions": [{"atStep": 43, "action": "jump", "width": 2},
+               {"atStep": 49, "action": "duck", "width": 1}]}`;
 
 // Run-length parsing is deterministic, so we do it here rather than asking a small
 // model to count characters - that is where gpt-4o-mini reliably goes wrong.
 function findObstacles(lane, playerIndex) {
   const out = [];
   for (let i = 0; i < lane.length; i++) {
-    if (lane[i] !== "1") continue;
+    const kind = lane[i];
+    if (kind !== "1" && kind !== "2") continue;
     let w = 0;
-    while (i + w < lane.length && lane[i + w] === "1") w++;
+    while (i + w < lane.length && lane[i + w] === kind) w++;
     const stepsAway = i - playerIndex;
-    if (stepsAway >= 2) out.push({ width: w, stepsAway });
+    if (stepsAway >= 2) {
+      out.push({ width: w, stepsAway,
+                 kind: kind === "2" ? "high" : "low",
+                 action: kind === "2" ? "duck" : "jump" });
+    }
     i += w - 1;
   }
   return out;
@@ -71,16 +75,17 @@ function parsePlan(text) {
     raw = JSON.parse(m[0]);
   }
   const actions = (Array.isArray(raw.actions) ? raw.actions : [])
-    .map((a) => ({ atStep: Number(a?.atStep), width: Number(a?.width) }))
+    .map((a) => ({ atStep: Number(a?.atStep), action: a?.action, width: Number(a?.width) }))
     .filter((a) => Number.isInteger(a.atStep) && Number.isInteger(a.width)
-                && a.width >= 1 && a.width <= 3);
+                && a.width >= 1 && a.width <= 3
+                && (a.action === "jump" || a.action === "duck"));
   return { reasoning: String(raw.reasoning ?? ""), actions };
 }
 
 function buildUserMessage(obs) {
   const list = findObstacles(obs.lane, obs.playerIndex);
   const lines = list.length
-    ? list.map((o) => `  - width ${o.width}, arrives in ${o.stepsAway} steps`).join("\n")
+    ? list.map((o) => `  - ${o.kind} (${o.action}), width ${o.width}, arrives in ${o.stepsAway} steps`).join("\n")
     : "  (none)";
   return `currentStep: ${obs.currentStep}\nlane: "${obs.lane}"\n` +
          `airborne: ${obs.airborne}\nobstacles:\n${lines}`;
@@ -115,25 +120,30 @@ async function decide(obs, signal) {
 const ACT_SYSTEM = `You are the decision policy inside an agent that plays a
 side-scrolling obstacle game. You are called once per obstacle, not every frame.
 
-You receive a compact game state. The grid is discrete: there is no velocity, all
-obstacles are height 1, and \`nearestObstacle.distance\` is how many steps until it
-reaches the player. \`nearestObstacle.width\` is 1, 2 or 3.
+There are two kinds of obstacle and each needs a DIFFERENT verb:
+- kind "low"  -> "jump" over it
+- kind "high" -> "duck" under it
+Standing still loses to either, and using the wrong verb loses too: jumping into
+a high obstacle hits it, and ducking under a low one still hits it.
+
+"width" is 1, 2 or 3 and says how long the verb must be held.
 
 You are asked ONCE per obstacle, deliberately early. You cannot defer: there is no
-later call for this obstacle, and by the time it is close a jump would arrive too
-late to clear it. Deciding "wait" while an obstacle is in view means the player runs
+later call for this obstacle, and by the time it is close the action would arrive
+too late. Deciding "wait" while an obstacle is in view means the player runs
 straight into it.
 
-The agent handles the TIMING of the jump. You decide only whether to jump and how
-wide. Do not reason about how many steps or milliseconds remain - that is not your job.
+The agent handles the TIMING. You decide only which verb and how wide. Do not
+reason about how many steps or milliseconds remain - that is not your job.
 
 Decide ONE action:
-- "jump" whenever nearestObstacle is present. Set "width" to that obstacle's width.
-- "wait" only when nearestObstacle is null.
+- the obstacle's required verb whenever nearestObstacle is present, copying its
+  "requiredAction" and "width"
+- "wait" only when nearestObstacle is null
 
 Reply with JSON only, and keep "reason" to at most six words - a long reason costs
 generation time, and the obstacle is moving while you write it:
-{"action":"jump"|"wait","width":<1|2|3>,"reason":"<=6 words"}`;
+{"action":"jump"|"duck"|"wait","width":<1|2|3>,"reason":"<=6 words"}`;
 
 function parseAction(text) {
   let raw;
@@ -153,8 +163,9 @@ async function act(state, signal) {
   const ob = state.nearestObstacle;
   const user = ob
     ? `step: ${state.game.step}\nspeed: ${state.game.speed}ms/step\n` +
-      `grounded: ${state.dino.isGrounded}\n` +
-      `nearestObstacle: width ${ob.width}, ${ob.distance} steps away\n` +
+      `pose: ${state.dino.pose}\n` +
+      `nearestObstacle: kind ${ob.kind}, requiredAction ${ob.requiredAction}, ` +
+      `width ${ob.width}, ${ob.distance} steps away\n` +
       `allowedActions: ${state.allowedActions.join(", ")}`
     : `step: ${state.game.step}\nno obstacle in view\n` +
       `allowedActions: ${state.allowedActions.join(", ")}`;
@@ -182,19 +193,24 @@ const PLAN_SYSTEM = `You are the decision policy inside an agent that plays a
 side-scrolling obstacle game. You are given every obstacle currently visible and
 must return one action for EACH of them in a single reply.
 
-The grid is discrete. Each obstacle lists its width (1, 2 or 3) and how many steps
-away it is. An obstacle "arrives in j steps" is cleared by
-{"atStep": currentStep + j, "width": <that obstacle's width>}.
+There are two kinds of obstacle and each needs a DIFFERENT verb:
+- kind "low"  -> "jump" over it
+- kind "high" -> "duck" under it
+Standing still loses to either, and the wrong verb loses too.
+
+The grid is discrete. Each obstacle lists its kind, its width (1, 2 or 3) and how
+many steps away it is. An obstacle "arrives in j steps" is handled by
+{"atStep": currentStep + j, "action": <its verb>, "width": <its width>}.
 
 Missing an obstacle kills the player. Emit one action per obstacle, in order.
 Reply with JSON only, keeping "reason" to at most eight words:
-{"reason":"<=8 words","actions":[{"atStep":<int>,"width":<1|2|3>}]}`;
+{"reason":"<=8 words","actions":[{"atStep":<int>,"action":"jump"|"duck","width":<1|2|3>}]}`;
 
 async function plan(state, signal) {
   if (!LLM_KEY) throw new Error("LLM_API_KEY is not set (put it in .env)");
   const list = (state.obstacles ?? []);
   const lines = list.length
-    ? list.map((o) => `  - width ${o.width}, arrives in ${o.distance} steps`).join("\n")
+    ? list.map((o) => `  - ${o.kind} (${o.requiredAction}), width ${o.width}, arrives in ${o.distance} steps`).join("\n")
     : "  (none)";
   const user = `currentStep: ${state.game.step}\nspeed: ${state.game.speed}ms/step\n` +
                `obstacles:\n${lines}`;

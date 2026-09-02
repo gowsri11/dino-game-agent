@@ -1,4 +1,4 @@
-import { createGame, step, applyAction, observe } from "./engine.js";
+import { createGame, step, applyAction, observe, POSE } from "./engine.js";
 import { setupCanvas, draw } from "./render.js";
 import { EventBus } from "./agent/events.js";
 import { createTools } from "./agent/tools.js";
@@ -14,8 +14,8 @@ let mode = "human";      // "human" | "agent"
 let running = false, paused = false, aborted = false;
 let arming = false;   // agent mode: hold the world still until the first plan lands
 let lastStepAt = 0;
-let bufferedPress = false;   // a press that arrived during the landing cooldown
-let prevAirborne = false;
+let bufferedAction = null;   // a press that arrived during the landing cooldown
+let prevPose = POSE.STAND;
 
 // Agent state
 const scheduled = new Map();   // atStep -> width
@@ -29,7 +29,7 @@ const events = new EventBus();
 const tools = createTools({
   getGame: () => game,
   startGame: () => newGame("agent"),
-  scheduleJump: (atStep, width) => scheduled.set(atStep, width),
+  scheduleAction: (atStep, action, width) => scheduled.set(atStep, { action, width }),
   isRunning: () => running && !paused,
   setFrozen: (v) => { arming = v; if (!v) lastStepAt = performance.now(); setButtons(); stats(); },
 });
@@ -65,8 +65,8 @@ function newGame(nextMode) {
   game = createGame();
   mode = nextMode;
   running = true; paused = false; aborted = false; arming = false;
-  bufferedPress = false;
-  prevAirborne = false;
+  bufferedAction = null;
+  prevPose = POSE.STAND;
   scheduled.clear();
   lastPlanStep = -999;
   inFlight?.abort();
@@ -106,11 +106,12 @@ async function requestPlan() {
     for (const a of plan.actions ?? []) {
       if (!Number.isInteger(a.atStep) || a.atStep <= game.step) continue;
       if (!Number.isInteger(a.width) || a.width < 1 || a.width > 3) continue;
+      if (a.action !== "jump" && a.action !== "duck") continue;
       if (!scheduled.has(a.atStep)) added++;
-      scheduled.set(a.atStep, a.width);
+      scheduled.set(a.atStep, { action: a.action, width: a.width });
     }
     log(`plan @${obs.currentStep} lane=${obs.lane} +${added} ` +
-        `[${(plan.actions ?? []).map((a) => `${a.atStep}:w${a.width}`).join(" ")}]` +
+        `[${(plan.actions ?? []).map((a) => `${a.atStep}:${a.action}${a.width}`).join(" ")}]` +
         (plan.reasoning ? `\n  ${plan.reasoning}` : ""));
   } catch (err) {
     if (err.name !== "AbortError") log(`plan error: ${err.message}`);
@@ -134,20 +135,20 @@ function tick(now) {
   if (running && !paused && !arming && now - lastStepAt >= game.stepMs) {
     lastStepAt = now;
 
-    // Lift off one step before the obstacle arrives, so the player is already in
-    // the air as it slides in rather than jumping on the frame of contact.
+    // Act one step before the obstacle arrives, so the player is already in the
+    // pose as it slides in rather than moving on the frame of contact.
     const dueAt = game.step + 2;
     const due = scheduled.get(dueAt);
     if (due !== undefined) {
       scheduled.delete(dueAt);
-      applyAction(game, { type: "jump", width: due });
+      applyAction(game, { type: due.action, width: due.width });
     }
-    prevAirborne = game.airborneNow;
+    prevPose = game.poseNow;
     step(game, null);
 
     // A press made during the post-landing cooldown is replayed here, once the
     // step has cleared that cooldown, rather than being silently dropped.
-    if (bufferedPress && applyAction(game, { type: "jump" })) bufferedPress = false;
+    if (bufferedAction && applyAction(game, { type: bufferedAction })) bufferedAction = null;
     for (const k of scheduled.keys()) if (k <= game.step + 1) scheduled.delete(k);
 
     if (!game.alive) gameOver(); else { maybePlan(); stats(); }
@@ -156,30 +157,33 @@ function tick(now) {
   const alpha = running && !paused && !arming
     ? Math.min(1, (now - lastStepAt) / game.stepMs)
     : 1;
-  draw(ctx, game, alpha, prevAirborne);
+  draw(ctx, game, alpha, prevPose);
 }
 requestAnimationFrame(tick);
 
 // --- input ----------------------------------------------------------------
 const stepAge = () => (performance.now() - lastStepAt) / game.stepMs;
 
-function humanPress() {
+function humanPress(type = "jump") {
   if (mode !== "human" || !running || paused) return;
-  // Always applied on the keypress itself, so the jump is never visually delayed.
-  // A tap that arrives too late still lifts off - it just forfeits protection
-  // against the cell already sliding onto the player, so you clip it.
+  // Always applied on the keypress itself, so the action is never visually
+  // delayed. A press that arrives too late still moves the player - it just
+  // forfeits protection against the cell already sliding on, so you clip it.
   const late = stepAge() >= LATE_PRESS;
-  const wasGrounded = game.airCells === 0;
-  const applied = applyAction(game, { type: "jump" });
-  if (applied && late && wasGrounded) game.lateJump = true;
-  bufferedPress = !applied;
+  const wasIdle = game.airCells === 0 && game.duckCells === 0;
+  const applied = applyAction(game, { type });
+  if (applied && late && wasIdle) game.lateAction = true;
+  bufferedAction = applied ? null : type;
 }
 
+const KEYS = { Space: "jump", ArrowDown: "duck", KeyS: "duck" };
+
 addEventListener("keydown", (e) => {
-  if (e.code !== "Space") return;
+  const type = KEYS[e.code];
+  if (!type) return;
   e.preventDefault();
   if (e.repeat) return;              // ignore key auto-repeat from a held key
-  humanPress();
+  humanPress(type);
 });
 
 $("start").onclick = () => { agent?.stop("human took over"); agent = null; newGame("human"); };
@@ -239,5 +243,6 @@ globalThis.dbg = {
   events,
   tools,
   press: humanPress,
+  duck: () => humanPress("duck"),
   stepAge,
 };

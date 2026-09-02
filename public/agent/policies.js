@@ -1,4 +1,5 @@
-// DecisionPolicy: anything with { name, decide(state, opts) -> {action, width, reason} }.
+// DecisionPolicy: anything with { name, decide(state, opts) -> {action, width, reason} }
+// or { name, plan(state, opts) -> {actions:[{atStep, action, width}], reason} }.
 // Swappable so the LLM can be replaced by the heuristic (or anything else) later.
 import { MAX_JUMP } from "../engine.js";
 
@@ -22,16 +23,16 @@ export function validateDecision(raw, state) {
   const observed = state.nearestObstacle?.width ?? 1;
   let width = Number(raw.width);
   if (!Number.isInteger(width) || width < 1 || width > MAX_JUMP) width = observed;
-  return { action: "jump", width, reason };
+  return { action, width, reason };
 }
 
 export const heuristicPolicy = {
   name: "heuristic",
   async decide(state) {
     const ob = state.nearestObstacle;
-    if (ob && ob.distance <= DANGER_DISTANCE && state.dino.isGrounded) {
-      return { action: "jump", width: ob.width,
-               reason: `w${ob.width} obstacle ${ob.distance} steps away, grounded` };
+    if (ob && ob.distance <= DANGER_DISTANCE) {
+      return { action: ob.requiredAction, width: ob.width,
+               reason: `${ob.kind} w${ob.width} in ${ob.distance} steps` };
     }
     return { action: "wait", width: 0, reason: "nothing within danger distance" };
   },
@@ -48,16 +49,25 @@ export function validatePlan(raw, state) {
   const actions = [];
   for (const a of list) {
     const atStep = Number(a?.atStep);
-    let width = Number(a?.width);
     if (!Number.isInteger(atStep) || atStep <= state.game.step) continue;
+    if (seen.has(atStep)) continue;
+
+    // Fall back to what the observer measured for this arrival step, so a model
+    // that names the right obstacle but the wrong verb or width is still usable.
+    const match = state.obstacles?.find((o) => o.arrivesAtStep === atStep);
+    let action = String(a?.action ?? "").toLowerCase();
+    if (action !== "jump" && action !== "duck") {
+      if (!match) continue;
+      action = match.requiredAction;
+    }
+    let width = Number(a?.width);
     if (!Number.isInteger(width) || width < 1 || width > MAX_JUMP) {
-      const match = state.obstacles?.find((o) => o.arrivesAtStep === atStep);
       if (!match) continue;
       width = match.width;
     }
-    if (seen.has(atStep)) continue;
+
     seen.add(atStep);
-    actions.push({ atStep, width });
+    actions.push({ atStep, action, width });
   }
   return { actions, reason: typeof raw.reason === "string" ? raw.reason.slice(0, 200) : "" };
 }
@@ -95,7 +105,9 @@ export const heuristicPlanner = {
   async plan(state) {
     return {
       reason: "all visible obstacles",
-      actions: (state.obstacles ?? []).map((o) => ({ atStep: o.arrivesAtStep, width: o.width })),
+      actions: (state.obstacles ?? []).map((o) => ({
+        atStep: o.arrivesAtStep, action: o.requiredAction, width: o.width,
+      })),
     };
   },
 };

@@ -125,7 +125,7 @@ export class Agent {
       if (!this.running || !plan) return;
 
       this.events.emit("action_selected", {
-        decision: { action: plan.actions.length ? "jump" : "wait",
+        decision: { action: plan.actions.length ? "act" : "wait",
                     reason: plan.reason, source, count: plan.actions.length },
         step: state.game.step,
       });
@@ -139,8 +139,8 @@ export class Agent {
           this.events.emit("action_missed", { arrivesAtStep: a.atStep, step: now, source });
           continue;
         }
-        const result = this.tools.scheduleJump(a.atStep, a.width);
-        this.events.emit("action_executed", { tool: "scheduleJump", ...result, source });
+        const result = this.tools.scheduleAction(a.atStep, a.action, a.width);
+        this.events.emit("action_executed", { tool: "scheduleAction", ...result, source });
       }
     } finally {
       this.planInFlight = false;
@@ -195,7 +195,7 @@ export class Agent {
   }
 
   execute(decision, target) {
-    if (decision.action !== "jump" || !target) return;
+    if (decision.action === "wait" || !target) return;
 
     // arrivesAtStep is absolute, so it stays correct however long the policy took.
     // Only the current step needs re-reading.
@@ -213,10 +213,10 @@ export class Agent {
       return;
     }
 
-    // Liftoff is scheduled against the obstacle's arrival step; the game loop
+    // The verb is scheduled against the obstacle's arrival step; the game loop
     // fires it a step early, which is what the width+1 airtime pays for.
-    const result = this.tools.scheduleJump(ob.arrivesAtStep, decision.width);
+    const result = this.tools.scheduleAction(ob.arrivesAtStep, decision.action, decision.width);
     this.handled.add(ob.arrivesAtStep);   // only after it actually landed in the queue
-    this.events.emit("action_executed", { tool: "scheduleJump", ...result, source: decision.source });
+    this.events.emit("action_executed", { tool: "scheduleAction", ...result, source: decision.source });
   }
 }

@@ -14,6 +14,18 @@ export const MIN_STEP_MS = 120;
 export const RAMP_EVERY = 25;
 export const RAMP_MS = 10;
 const OBSTACLE_CHANCE = 0.4;
+const HIGH_CHANCE = 0.35;            // share of obstacles that must be ducked
+
+// Cell kinds. A low obstacle must be jumped, a high one must be ducked under.
+// Standing upright is fatal to both, so every obstacle asks which verb, not just
+// when - that is where the skill lives, and it needs no timing margin to express.
+export const EMPTY = 0;
+export const LOW = 1;
+export const HIGH = 2;
+
+// Which pose survives which cell.
+export const POSE = { STAND: "stand", AIR: "air", DUCK: "duck" };
+const SURVIVES = { [LOW]: POSE.AIR, [HIGH]: POSE.DUCK };
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -30,17 +42,19 @@ function mulberry32(seed) {
 // an obstacle is never started until MIN_GAP empty cells have gone by.
 function createGenerator(rand, leadIn) {
   let pending = 0;
+  let pendingKind = LOW;
   let cooldown = leadIn;
   return function nextCell() {
-    if (pending > 0) { pending--; return 1; }
-    if (cooldown > 0) { cooldown--; return 0; }
+    if (pending > 0) { pending--; return pendingKind; }
+    if (cooldown > 0) { cooldown--; return EMPTY; }
     if (rand() < OBSTACLE_CHANCE) {
       const width = 1 + Math.floor(rand() * MAX_JUMP);
+      pendingKind = rand() < HIGH_CHANCE ? HIGH : LOW;
       pending = width - 1;
       cooldown = MIN_GAP;
-      return 1;
+      return pendingKind;
     }
-    return 0;
+    return EMPTY;
   };
 }
 
@@ -51,38 +65,60 @@ export function createGame(seed = Date.now()) {
   return {
     seed, lane, nextCell,
     airCells: 0,      // cells still to be spent airborne, including this step
-    extendsLeft: 0,   // how much more this jump may be stretched
+    duckCells: 0,     // same countdown for the crouch
+    extendsLeft: 0,   // how much more the current jump or duck may be stretched
     groundCooldown: 0,// forces one grounded step between jumps (no space-mashing)
-    // Whether the player was airborne for the cell currently under them. This is
-    // the display truth; airCells is the countdown and drops a step ahead of it.
-    airborneNow: false,
-    // Set when a jump was started too late to clear the cell already arriving.
-    // The jump still happens - it just does not protect against that one cell.
-    lateJump: false,
+    // The pose the player held for the cell currently under them. This is the
+    // display truth; airCells/duckCells are countdowns and drop a step ahead of it.
+    poseNow: POSE.STAND,
+    // Set when an action was started too late to cover the cell already arriving.
+    // The action still happens - it just does not protect against that one cell.
+    lateAction: false,
     step: 0, score: 0, alive: true, stepMs: START_STEP_MS,
   };
 }
 
-// action: null | {type:"jump", width?}
-// One action type covers both cases: a jump while grounded starts one, a jump
-// while airborne extends it. A human tap omits width; the agent sets it.
-// Returns true if the input actually did something, so the caller can buffer a
-// press that arrived during the post-landing cooldown instead of dropping it.
+export function poseOf(g) {
+  if (g.airCells > 0) return POSE.AIR;
+  if (g.duckCells > 0) return POSE.DUCK;
+  return POSE.STAND;
+}
+
+// action: null | {type:"jump"|"duck", width?}
+// One type per verb. Starting the verb while already in it extends it instead.
+// A human tap omits width; the agent sets it. Returns true if the input did
+// something, so the caller can buffer a press that arrived during the cooldown.
 export function applyAction(g, action) {
   if (!action || !g.alive) return false;
-  const airborne = g.airCells > 0;
-  if (!airborne) {
-    if (action.type !== "jump" || g.groundCooldown > 0) return false;
-    const w = Math.min(MAX_JUMP, Math.max(1, Math.trunc(action.width ?? 1)));
+  const w = Math.min(MAX_JUMP, Math.max(1, Math.trunc(action.width ?? 1)));
+
+  if (action.type === "jump") {
+    if (g.airCells > 0) {                       // already airborne: extend
+      if (g.extendsLeft <= 0) return false;
+      g.airCells += 1;
+      g.extendsLeft -= 1;
+      return true;
+    }
+    if (g.groundCooldown > 0) return false;
+    g.duckCells = 0;                            // a jump cancels a crouch
     g.airCells = w + 1;
     g.extendsLeft = MAX_AIR - g.airCells;
     return true;
   }
-  if (g.extendsLeft > 0) {
-    g.airCells += 1;
-    g.extendsLeft -= 1;
+
+  if (action.type === "duck") {
+    if (g.airCells > 0) return false;           // cannot crouch in mid-air
+    if (g.duckCells > 0) {                      // already ducking: extend
+      if (g.extendsLeft <= 0) return false;
+      g.duckCells += 1;
+      g.extendsLeft -= 1;
+      return true;
+    }
+    g.duckCells = w + 1;
+    g.extendsLeft = MAX_AIR - g.duckCells;
     return true;
   }
+
   return false;
 }
 
@@ -97,19 +133,25 @@ export function step(g, action) {
   g.lane.push(g.nextCell());
   g.step++;
 
-  const airborne = g.airCells > 0;
-  g.airborneNow = airborne;
-  const protectedNow = airborne && !g.lateJump;
-  g.lateJump = false;
-  if (!protectedNow && g.lane[PLAYER_COL] === 1) {
+  const pose = poseOf(g);
+  g.poseNow = pose;
+  // A late action still moves the player, it just forfeits protection this step.
+  const covered = g.lateAction ? POSE.STAND : pose;
+  g.lateAction = false;
+
+  const cell = g.lane[PLAYER_COL];
+  if (cell !== EMPTY && SURVIVES[cell] !== covered) {
     g.alive = false;
     return g;
   }
 
   g.score++;
-  if (airborne) {
+  if (g.airCells > 0) {
     g.airCells--;
     if (g.airCells === 0) { g.extendsLeft = 0; g.groundCooldown = 1; }
+  } else if (g.duckCells > 0) {
+    g.duckCells--;
+    if (g.duckCells === 0) g.extendsLeft = 0;
   }
   if (g.step % RAMP_EVERY === 0) g.stepMs = Math.max(MIN_STEP_MS, g.stepMs - RAMP_MS);
   return g;
@@ -121,6 +163,6 @@ export function observe(g) {
     currentStep: g.step,
     lane: g.lane.join(""),
     playerIndex: PLAYER_COL,
-    airborne: g.airCells > 0,
+    pose: poseOf(g),
   };
 }
