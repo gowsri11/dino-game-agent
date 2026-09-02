@@ -8,7 +8,7 @@ Tracking for the "make it a better game" work. Each item is one commit.
 | 2 | Duck verb and high obstacles | done |
 | 3 | Recovery cost scaled to commitment; variable gaps | done |
 | 4 | Difficulty curve that does not plateau | done |
-| 5 | Authored obstacle patterns | todo |
+| 5 | Authored obstacle patterns | done |
 | 6 | Seed sharing, high score, feedback | todo |
 | 7 | Headless benchmark harness | todo |
 
@@ -57,3 +57,19 @@ slack in the gaps is squeezed out, over the following 900 steps. The gap floor
 itself is never crossed, so lanes stay provably clearable no matter how long a
 run goes on - which does mean difficulty is bounded. It has to be: an unbounded
 curve eventually produces a lane no player can clear.
+
+
+## Authored patterns (5)
+
+A memoryless per-cell coin flip produces statistically uniform terrain: every run
+feels the same and nothing is memorable. Lanes are now built from authored chunks
+in `public/patterns.js`, gated by tier so shapes are introduced over time -
+singles first, then pairs and mixed over/under sequences, then gauntlets.
+
+Tiers unlock on their own schedule (every 120 steps) rather than following the
+density curve, which does not start moving until the speed ramp has floored. Tied
+to density, the opening minutes would have been nothing but single obstacles.
+
+Patterns list obstacles only. The generator inserts the required gap after each
+one, so a pattern cannot express an unclearable spacing even by mistake - the
+invariant is structural rather than something each pattern has to get right.

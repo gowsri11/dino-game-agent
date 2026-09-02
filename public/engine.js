@@ -1,6 +1,10 @@
 // Pure game logic. No DOM, no timers, no rendering.
 // Runs unchanged in the browser and in Node (tests, headless agent runs).
 
+import { EMPTY, LOW, HIGH, POSE } from "./cells.js";
+import { pickPattern } from "./patterns.js";
+export { EMPTY, LOW, HIGH, POSE } from "./cells.js";
+
 export const LANE_WIDTH = 20;        // visible cells
 export const LANE_LEN = LANE_WIDTH + 1; // one extra so cells slide in smoothly
 export const PLAYER_COL = 2;
@@ -23,7 +27,6 @@ export const RAMP_EVERY = 25;
 export const RAMP_MS = 10;
 const OBSTACLE_CHANCE = 0.35;
 const MAX_OBSTACLE_CHANCE = 0.7;
-const HIGH_CHANCE = 0.35;            // share of obstacles that must be ducked
 
 // Speed alone plateaus: it reaches MIN_STEP_MS after SPEED_STEPS and then the
 // game never gets harder again. Once it floors, difficulty keeps climbing as
@@ -35,15 +38,7 @@ const DENSITY_SPAN = 900;
 export const difficulty = (step) =>
   Math.min(1, Math.max(0, (step - SPEED_STEPS) / DENSITY_SPAN));
 
-// Cell kinds. A low obstacle must be jumped, a high one must be ducked under.
-// Standing upright is fatal to both, so every obstacle asks which verb, not just
-// when - that is where the skill lives, and it needs no timing margin to express.
-export const EMPTY = 0;
-export const LOW = 1;
-export const HIGH = 2;
-
 // Which pose survives which cell.
-export const POSE = { STAND: "stand", AIR: "air", DUCK: "duck" };
 const SURVIVES = { [LOW]: POSE.AIR, [HIGH]: POSE.DUCK };
 
 function mulberry32(seed) {
@@ -59,24 +54,33 @@ function mulberry32(seed) {
 
 // Emits one lane cell at a time. `cooldown` is what makes every lane clearable:
 // an obstacle is never started until MIN_GAP empty cells have gone by.
+// Expands a pattern into cells, inserting the required gap after every item.
+// Doing it here rather than in the pattern data means a pattern cannot express
+// an unclearable spacing even by mistake.
+function expand(pattern, rand, d) {
+  const cells = [];
+  // gapFor(width) is the tightest gap a correctly-sized action can clear; the
+  // slack on top varies the rhythm and is squeezed out as difficulty rises, but
+  // the floor is never crossed, so every lane stays clearable.
+  const slack = Math.round(EXTRA_GAP * (1 - d));
+  for (const [kind, width] of pattern.items) {
+    for (let k = 0; k < width; k++) cells.push(kind);
+    const gap = gapFor(width) + Math.floor(rand() * (slack + 1));
+    for (let k = 0; k < gap; k++) cells.push(EMPTY);
+  }
+  return cells;
+}
+
 function createGenerator(rand, leadIn) {
-  let pending = 0;
-  let pendingKind = LOW;
+  let buffer = [];
   let cooldown = leadIn;
   return function nextCell(step = 0) {
-    if (pending > 0) { pending--; return pendingKind; }
+    if (buffer.length) return buffer.shift();
     if (cooldown > 0) { cooldown--; return EMPTY; }
     const d = difficulty(step);
     if (rand() < OBSTACLE_CHANCE + (MAX_OBSTACLE_CHANCE - OBSTACLE_CHANCE) * d) {
-      const width = 1 + Math.floor(rand() * MAX_JUMP);
-      pendingKind = rand() < HIGH_CHANCE ? HIGH : LOW;
-      pending = width - 1;
-      // gapFor(width) is the tightest gap a correctly-sized action can clear; the
-      // slack on top varies the rhythm and is squeezed out as difficulty rises,
-      // but the floor is never crossed, so every lane stays clearable.
-      const slack = Math.round(EXTRA_GAP * (1 - d));
-      cooldown = gapFor(width) + Math.floor(rand() * (slack + 1));
-      return pendingKind;
+      buffer = expand(pickPattern(rand, step), rand, d);
+      return buffer.shift();
     }
     return EMPTY;
   };
