@@ -9,8 +9,14 @@ const ctx = setupCanvas(document.getElementById("game"));
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
 
+// The event log is a debugging surface, not part of the game. Opt in with
+// ?debug=123 so a normal player never sees it.
+const params = new URLSearchParams(location.search);
+const DEBUG = params.get("debug") === "123";
+if (!DEBUG) logEl.hidden = true;
+
 // A seed can come from the URL, so a run can be shared and replayed exactly.
-const urlSeed = Number(new URLSearchParams(location.search).get("seed"));
+const urlSeed = Number(params.get("seed"));
 if (Number.isFinite(urlSeed) && urlSeed > 0) $("seed").value = String(urlSeed);
 
 const BEST_KEY = "dino:best";
@@ -76,6 +82,7 @@ events.on((e) => {
 });
 
 function log(msg) {
+  if (!DEBUG) return;
   logEl.textContent += msg + "\n";
   logEl.scrollTop = logEl.scrollHeight;
 }

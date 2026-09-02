@@ -37,6 +37,12 @@ Human mode needs no credentials.
   without touching collision.
 - Landing on a `1` ends the game. Speed ramps from 260ms to 120ms per step.
 
+## Debug console
+
+The event log is hidden by default; open the page with `?debug=123` to show it.
+It streams the agent's events, which is the fastest way to tell a model error from
+an engine one.
+
 ## Look
 
 The scene is parallax - clouds, two hill layers and floor dashes each scroll at

@@ -6,7 +6,7 @@ import { MAX_JUMP } from "../engine.js";
 export const DANGER_DISTANCE = 12;   // steps; inside this the heuristic acts
 // The loop blocks for a model round-trip (~1.2s, i.e. ~5 steps), so decisions are
 // requested as soon as an obstacle is visible at all, to maximise the runway.
-export const PLANNING_WINDOW = 18;
+export const PLANNING_WINDOW = 22;
 
 // Normalises and range-checks whatever the model returned. Anything unusable
 // returns null so the caller can fall back to "wait" or to the heuristic.

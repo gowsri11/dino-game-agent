@@ -5,7 +5,7 @@ import { EMPTY, LOW, HIGH, POSE } from "./cells.js";
 import { pickPattern } from "./patterns.js";
 export { EMPTY, LOW, HIGH, POSE } from "./cells.js";
 
-export const LANE_WIDTH = 20;        // visible cells
+export const LANE_WIDTH = 24;        // visible cells
 export const LANE_LEN = LANE_WIDTH + 1; // one extra so cells slide in smoothly
 export const PLAYER_COL = 2;
 export const MAX_JUMP = 3;
@@ -96,6 +96,7 @@ export function createGame(seed = Date.now()) {
     duckCells: 0,     // same countdown for the crouch
     extendsLeft: 0,   // how much more the current jump or duck may be stretched
     actionWidth: 0,   // width committed to, which sets the recovery cost
+    airSpan: 0,       // total airborne cells for this jump; sets the arc height
     groundCooldown: 0,// recovery cells owed after the current action ends
     // The pose the player held for the cell currently under them. This is the
     // display truth; airCells/duckCells are countdowns and drop a step ahead of it.
@@ -125,6 +126,7 @@ export function applyAction(g, action) {
     if (g.airCells > 0) {                       // already airborne: extend
       if (g.extendsLeft <= 0) return false;
       g.airCells += 1;
+      g.airSpan += 1;
       g.extendsLeft -= 1;
       g.actionWidth += 1;                       // a longer jump costs more recovery
       return true;
@@ -132,6 +134,7 @@ export function applyAction(g, action) {
     if (g.groundCooldown > 0) return false;
     g.duckCells = 0;                            // a jump cancels a crouch
     g.airCells = w + 1;
+    g.airSpan = g.airCells;
     g.extendsLeft = MAX_AIR - g.airCells;
     g.actionWidth = w;
     return true;

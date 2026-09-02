@@ -1,9 +1,9 @@
 import { LANE_LEN, LANE_WIDTH, PLAYER_COL, LOW, HIGH, EMPTY, POSE, difficulty }
   from "./engine.js";
 
-export const CELL = 40;
-const ROWS_H = CELL * 6.5;
-const FLOOR_Y = CELL * 5.25;          // the ground line
+export const CELL = 44;
+const ROWS_H = CELL * 7.5;
+const FLOOR_Y = CELL * 6;             // the ground line
 const GROUND_Y = FLOOR_Y - CELL;      // top of a standing player
 
 // Geometry chosen so the rules are visually true: a high obstacle overlaps a
@@ -150,6 +150,20 @@ function drawRun(ctx, p, kind, i, w, alpha) {
 const topFor = (pose) =>
   pose === POSE.AIR ? AIR_TOP : pose === POSE.DUCK ? DUCK_TOP : GROUND_Y;
 
+// Extra altitude on top of the clearance height, in proportion to the jump the
+// player committed to: a tap hops, three taps arc. Presentation only - collision
+// is "airborne clears low" regardless of height. Making height mechanical would
+// mean tall obstacles, and "jump higher" is a size distinction, which needs
+// timing margin to express and collapses (see ROADMAP.md). The verb is duck.
+const ARC_PER_CELL = CELL * 0.45;
+function arcLift(g, alpha) {
+  if (g.poseNow !== POSE.AIR || !g.airSpan) return 0;
+  const done = g.airSpan - g.airCells;          // cells already spent aloft
+  const p = Math.min(1, Math.max(0, (done + alpha) / g.airSpan));
+  const extra = Math.max(0, g.airSpan - 2) * ARC_PER_CELL;
+  return extra * 4 * p * (1 - p);               // parabola, peaking mid-jump
+}
+
 function drawPlayer(ctx, p, g, alpha, prevPose, pulse) {
   // Rise fast, drop late. Collision is unchanged - this only stretches the
   // apparent hang time and keeps the sprite clear of the obstacle it just passed.
@@ -159,7 +173,9 @@ function drawPlayer(ctx, p, g, alpha, prevPose, pulse) {
   const rising = to < from;
   const t = rising ? Math.min(1, alpha / 0.45) : Math.max(0, (alpha - 0.45) / 0.55);
   const ease = t * t * (3 - 2 * t);
-  const y = from + (to - from) * ease;
+  // The arc rides on top of the clearance height, so the sprite never dips back
+  // toward an obstacle it is still passing over.
+  const y = from + (to - from) * ease - arcLift(g, alpha);
   const cx = PLAYER_COL * CELL + CELL / 2;
 
   // Shadow shrinks with height, which reads as altitude without a second sprite.
