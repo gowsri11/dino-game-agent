@@ -19,7 +19,8 @@ Human mode needs no credentials.
 - Obstacles are height 1, width 1/2/3, always separated by >= 4 empty cells. Each run
   of cells is drawn as one polygon with sloped outer edges — a width-1 obstacle is a
   peak, wider ones are plateaus. Collision stays whole-cell; the slope is cosmetic.
-- **Space** starts a run when idle, and jumps once it is running. **P** pauses.
+- **Space** / **Up** start a run when idle, and jump once it is running.
+- **Down** held keeps the crouch; releasing ends it. **P** pauses.
 - **Space** = jump, applied on the keypress itself (not the next step boundary).
   Tap again mid-air to extend.
 - Airtime is **width + 1** cells. The spare cell absorbs the fact that a press lands
@@ -53,11 +54,10 @@ gets harder. Obstacle colours stay high-contrast in both.
 
 ## Seeds
 
-The generator is seeded, so a run is reproducible. The seed box is an *override*:
-leave it blank for a fresh lane every run, or type a number to replay that one.
-The seed actually in use is shown in the HUD, and `share` copies a `?seed=` link.
-Same seed, same lane - which is what makes a human score and an agent score
-comparable.
+The generator is seeded, so a run is reproducible. The seed is shown in the HUD;
+**Start** replays it, **new seed** rolls a fresh one and starts, and **copy seed
+link** copies a `?seed=` URL that reproduces the lane. Same seed, same lane -
+which is what makes a human score and an agent score comparable.
 
 ## Design
 

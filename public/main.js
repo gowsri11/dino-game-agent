@@ -16,8 +16,11 @@ const DEBUG = params.get("debug") === "123";
 if (!DEBUG) logEl.hidden = true;
 
 // A seed can come from the URL, so a run can be shared and replayed exactly.
+// The seed is state we own and display. A shared link pins it; otherwise every
+// "new seed" press rolls a fresh one. Start replays the current seed, so you can
+// practise the same lane.
 const urlSeed = Number(params.get("seed"));
-if (Number.isFinite(urlSeed) && urlSeed > 0) $("seed").value = String(urlSeed);
+let currentSeed = Number.isFinite(urlSeed) && urlSeed > 0 ? urlSeed : Date.now();
 
 const BEST_KEY = "dino:best";
 const readBest = () => Number(localStorage.getItem(BEST_KEY) ?? 0) || 0;
@@ -105,21 +108,18 @@ function stats() {
               : (aborted ? "aborted" : "running");
   $("stats").textContent =
     `mode ${mode} | ${state} | score ${game.score} | step ${game.step} | ${game.stepMs}ms/step`;
-  $("seedout").textContent = `seed ${game.seed}`;
+  $("seedout").textContent = `seed ${currentSeed}`;
   const best = readBest();
   $("best").textContent = best ? `best ${best}` : "";
   $("best").hidden = !best;
 }
 
 function newGame(nextMode) {
-  // The box is an override, not a display: leaving it blank means "new lane every
-  // run". Overwriting it with the seed just used silently pinned every later run
-  // to the first one's lane.
-  const wanted = Number($("seed").value.trim());
-  game = createGame(Number.isFinite(wanted) && wanted > 0 ? wanted : undefined);
+  game = createGame(currentSeed);
   deathAt = 0;
   clearedAt = 0;
   boostAt = 0;
+  game.duckHold = false;
   mode = nextMode;
   running = true; paused = false; aborted = false; arming = false;
   bufferedAction = null;
@@ -249,7 +249,11 @@ function humanPress(type = "jump") {
   bufferedAction = applied ? null : type;
 }
 
-const KEYS = { Space: "jump", ArrowDown: "duck", KeyS: "duck" };
+const KEYS = {
+  Space: "jump", ArrowUp: "jump", KeyW: "jump",
+  ArrowDown: "duck", KeyS: "duck",
+};
+const DUCK_KEYS = new Set(["ArrowDown", "KeyS"]);
 
 addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;   // typing a seed
@@ -262,6 +266,9 @@ addEventListener("keydown", (e) => {
   const type = KEYS[e.code];
   if (!type) return;
   e.preventDefault();
+  // Holding duck should keep the crouch, so the repeat events are what tell us
+  // the key is still down - but they must not re-trigger the action itself.
+  if (DUCK_KEYS.has(e.code)) game.duckHold = true;
   if (e.repeat) return;              // ignore key auto-repeat from a held key
 
   // Space doubles as start/restart, so a run begins without reaching for the
@@ -309,10 +316,20 @@ function startSelected() {
   newGame("human");
 }
 
+addEventListener("keyup", (e) => {
+  if (DUCK_KEYS.has(e.code)) game.duckHold = false;
+});
+addEventListener("blur", () => { game.duckHold = false; });
+
 $("start").onclick = startSelected;
 
+$("newseed").onclick = () => {
+  currentSeed = Date.now();
+  startSelected();
+};
+
 $("share").onclick = async () => {
-  const url = `${location.origin}${location.pathname}?seed=${game.seed}`;
+  const url = `${location.origin}${location.pathname}?seed=${currentSeed}`;
   try {
     await navigator.clipboard.writeText(url);
     log(`copied: ${url}`);

@@ -97,6 +97,7 @@ export function createGame(seed = Date.now()) {
     extendsLeft: 0,   // how much more the current jump or duck may be stretched
     actionWidth: 0,   // width committed to, which sets the recovery cost
     airSpan: 0,       // total airborne cells for this jump; sets the arc height
+    duckHold: false,  // the duck key is down: hold the crouch instead of decaying
     groundCooldown: 0,// recovery cells owed after the current action ends
     // The pose the player held for the cell currently under them. This is the
     // display truth; airCells/duckCells are countdowns and drop a step ahead of it.
@@ -186,7 +187,9 @@ export function step(g, action) {
   if (g.airCells > 0) {
     g.airCells--;
     if (g.airCells === 0) endAction(g);
-  } else if (g.duckCells > 0) {
+  } else if (g.duckCells > 0 && !g.duckHold) {
+    // While the key is held the crouch persists; releasing lets it end and charges
+    // the recovery, so holding is not free but also not a per-cell cost.
     g.duckCells--;
     if (g.duckCells === 0) endAction(g);
   }

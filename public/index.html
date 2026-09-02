@@ -12,10 +12,10 @@
   * { box-sizing: border-box; }
   body {
     font-family: ui-monospace, Menlo, Consolas, monospace;
-    margin: 0; padding: 24px; background: var(--bg); color: var(--ink);
+    margin: 0; padding: 16px 20px; background: var(--bg); color: var(--ink);
     display: flex; flex-direction: column; align-items: center; gap: 14px;
   }
-  .wrap { width: 1056px; max-width: 100%; }
+  .wrap { width: min(1500px, 100%); }
   h1 {
     font-size: 20px; margin: 0 0 12px; letter-spacing: .5px;
     display: flex; align-items: baseline; gap: 10px;
@@ -107,9 +107,8 @@
       <button id="start" class="primary">Start</button>
       <button id="pause" disabled>Pause</button>
       <button id="abort" class="danger" disabled>Abort agent</button>
-      <label>seed <input id="seed" placeholder="random"
-             title="leave blank for a new lane each run; enter a number to replay one" /></label>
-      <button id="share" title="copy a link that replays this exact run">share</button>
+      <button id="newseed" title="start a run on a brand new lane">new seed</button>
+      <button id="share" title="copy a link that replays this exact lane">copy seed link</button>
     </div>
 
     <div id="hud">
@@ -122,7 +121,8 @@
     <p class="hint">
       <kbd>Space</kbd> start &middot; <kbd>Space</kbd> jump over
       <span class="low">low</span> obstacles &middot;
-      <kbd>&darr;</kbd> duck under <span class="high">high</span> ones &middot;
+      <kbd>&uarr;</kbd> also jumps &middot;
+      <kbd>&darr;</kbd> <i>hold</i> to duck under <span class="high">high</span> ones &middot;
       <kbd>P</kbd> pause.<br />
       Tap again to extend for wider obstacles. Standing still loses to both, and
       over-committing costs recovery time.
@@ -158,12 +158,12 @@
         <dd>Pure local code, no model. Also the automatic fallback whenever an LLM
             policy fails, errors, or takes too long.</dd>
 
-        <dt>seed / share</dt>
+        <dt>seed</dt>
         <dd>The seed fixes the lane: the same seed always generates the same
             obstacles, so a human run and an agent run can be compared on identical
-            terrain. Leave the box <b>blank</b> for a fresh lane every run, or type
-            a number to replay that one. The seed actually in use is shown below,
-            and <b>share</b> copies a <code>?seed=</code> link to it.</dd>
+            terrain. <b>Start</b> replays the current seed, so you can practise one
+            lane. <b>new seed</b> rolls a fresh one and starts. <b>copy seed link</b>
+            copies a <code>?seed=</code> URL that reproduces this exact lane.</dd>
 
         <dt>pause / abort</dt>
         <dd><b>Pause</b> freezes the world; scheduled actions survive it because the

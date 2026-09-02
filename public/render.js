@@ -1,9 +1,9 @@
 import { LANE_LEN, LANE_WIDTH, PLAYER_COL, LOW, HIGH, EMPTY, POSE, difficulty }
   from "./engine.js";
 
-export const CELL = 44;
-const ROWS_H = CELL * 7.5;
-const FLOOR_Y = CELL * 6;             // the ground line
+export const CELL = 48;
+const ROWS_H = CELL * 8.5;
+const FLOOR_Y = CELL * 6.5;           // the ground line
 const GROUND_Y = FLOOR_Y - CELL;      // top of a standing player
 
 // Geometry chosen so the rules are visually true: a high obstacle overlaps a
@@ -155,6 +155,16 @@ function drawRun(ctx, p, kind, i, w, alpha) {
   ctx.fill();
 }
 
+// poseNow is the pose that applied to the cell already under the player, which is
+// what collision display needs. But an action taken mid-step must show at once,
+// or the obstacle slides onto a still-grounded sprite before it lifts. A late
+// action is excluded: it forfeits protection, so it should look like a clip.
+function renderPose(g) {
+  if (g.poseNow === POSE.AIR || (g.airCells > 0 && !g.lateAction)) return POSE.AIR;
+  if (g.poseNow === POSE.DUCK || (g.duckCells > 0 && !g.lateAction)) return POSE.DUCK;
+  return POSE.STAND;
+}
+
 const topFor = (pose) =>
   pose === POSE.AIR ? AIR_TOP : pose === POSE.DUCK ? DUCK_TOP : GROUND_Y;
 
@@ -165,7 +175,7 @@ const topFor = (pose) =>
 // timing margin to express and collapses (see ROADMAP.md). The verb is duck.
 const ARC_PER_CELL = CELL * 0.45;
 function arcLift(g, alpha) {
-  if (g.poseNow !== POSE.AIR || !g.airSpan) return 0;
+  if (renderPose(g) !== POSE.AIR || !g.airSpan) return 0;
   const done = g.airSpan - g.airCells;          // cells already spent aloft
   const p = Math.min(1, Math.max(0, (done + alpha) / g.airSpan));
   const extra = Math.max(0, g.airSpan - 2) * ARC_PER_CELL;
@@ -175,7 +185,7 @@ function arcLift(g, alpha) {
 function drawPlayer(ctx, p, g, alpha, prevPose, pulse, fx) {
   // Rise fast, drop late. Collision is unchanged - this only stretches the
   // apparent hang time and keeps the sprite clear of the obstacle it just passed.
-  const pose = g.poseNow;
+  const pose = renderPose(g);
   const from = topFor(prevPose);
   const to = topFor(pose);
   const rising = to < from;
