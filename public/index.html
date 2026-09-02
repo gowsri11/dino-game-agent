@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Obstacle Runner</title>
+<style>
+  body { font-family: ui-monospace, Menlo, Consolas, monospace; margin: 24px;
+         background: #fff; color: #222; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  canvas { border: 1px solid #ccc; display: block; image-rendering: pixelated; }
+  #bar { margin: 12px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; padding: 6px 12px; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  #stats { margin-left: 12px; }
+  #log { margin-top: 12px; height: 230px; overflow-y: auto; background: #f4f4f4;
+         border: 1px solid #ddd; padding: 8px; font-size: 12px; white-space: pre-wrap; }
+  .hint { color: #666; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>Obstacle Runner</h1>
+  <canvas id="game"></canvas>
+  <div id="bar">
+    <button id="start">Start (human)</button>
+    <button id="agent">Start (agent)</button>
+    <select id="policy" title="decision policy used inside the agent loop">
+      <option value="llm-batch">policy: LLM (batch plan)</option>
+      <option value="llm">policy: LLM (per obstacle)</option>
+      <option value="heuristic">policy: heuristic</option>
+    </select>
+    <button id="planner">Start (planner)</button>
+    <button id="pause" disabled>Pause</button>
+    <button id="abort" disabled>Abort agent</button>
+    <span id="stats">score 0</span>
+  </div>
+  <p class="hint">Space = jump. Tap again mid-air to extend (max 3 cells).
+     Width-3 obstacle needs 3 taps.</p>
+  <div id="log"></div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

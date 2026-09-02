@@ -1,0 +1,10 @@
+{
+  "name": "dino-game",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "test": "node --test 'test/*.test.js'"
+  },
+  "dependencies": {}
+}
